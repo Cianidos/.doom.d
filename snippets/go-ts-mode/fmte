@@ -1,0 +1,5 @@
+# -*- mode: snippet -*-
+# name: fmt.Errorf("%w", err)
+# key: fmte
+# --
+fmt.Errorf("$0%w", err)

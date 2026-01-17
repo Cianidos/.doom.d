@@ -1,0 +1,688 @@
+;;; $DOOMDIR/config.el -*- lexical-binding: t; -*-
+
+;; Place your private configuration here! Remember, you do not need to run 'doom
+;; sync' after modifying this file!
+
+
+;; Some functionality uses this to identify you, e.g. GPG configuration, email
+;; clients, file templates and snippets. It is optional.
+;; (setq user-full-name "John Doe"
+;;       user-mail-address "john@doe.com")
+
+;; Doom exposes five (optional) variables for controlling fonts in Doom:
+;;
+;; - `doom-font' -- the primary font to use
+;; - `doom-variable-pitch-font' -- a non-monospace font (where applicable)
+;; - `doom-big-font' -- used for `doom-big-font-mode'; use this for
+;;   presentations or streaming.
+;; - `doom-symbol-font' -- for symbols
+;; - `doom-serif-font' -- for the `fixed-pitch-serif' face
+;;
+;; See 'C-h v doom-font' for documentation and more examples of what they
+;; accept. For example:
+;;
+;;(setq doom-font (font-spec :family "Fira Code" :size 12 :weight 'semi-light)
+;;      doom-variable-pitch-font (font-spec :family "Fira Sans" :size 13))
+;;
+(setq doom-font (font-spec :family "Iosevka" :weight 'light :size 44))
+
+;; If you or Emacs can't find your font, use 'M-x describe-font' to look them
+;; up, `M-x eval-region' to execute elisp code, and 'M-x doom/reload-font' to
+;; refresh your font settings. If Emacs still can't find your font, it likely
+;; wasn't installed correctly. Font issues are rarely Doom issues!
+
+;; There are two ways to load a theme. Both assume the theme is installed and
+;; available. You can either set `doom-theme' or manually load a theme with the
+;; `load-theme' function. This is the default:
+
+;; (setq doom-theme 'doom-one)
+(setq! doom-theme 'doom-solarized-dark-high-contrast)
+(custom-set-faces!
+  '(font-lock-type-face :slant normal)
+  '(font-lock-delimiter-face :foreground "#2f4f4f")
+  '(font-lock-keyword-face :foreground "#2f4f4f")
+  '(font-lock-bracket-face :foreground "#2f4f4f")
+  '(font-lock-constant-face :foreground "#7a7ed2" :weight normal)
+  '(eglot-semantic-readonly-face :foreground "#7a7ed2" :weight normal)
+  '(font-lock-builtin-face :foreground unspecified)
+  '(eglot-semantic-definition-face :foreground unspecified :weight semi-bold :slant italic)
+  '(eglot-semantic-declaration-face :foreground unspecified :weight semi-bold :slant italic)
+  ;; TODO: wtw it is blue again
+  '(font-lock-function-name-face :foreground unspecified)
+  '(font-lock-function-call-face :foreground unspecified)
+  '(eglot-semantic-method-face :foreground unspecified)
+  '(eglot-semantic-method :foreground unspecified)
+
+  '(eglot-semantic-definition :foreground "#3c98e0")
+  
+  '(eglot-semantic-function-face :foreground unspecified)
+  )
+
+
+
+(use-package! rainbow-delimiters
+  :config
+  (add-hook 'prog-mode-hook #'rainbow-delimiters-mode)
+  )
+
+(add-hook 'prog-mode-hook
+          (lambda ()
+            (font-lock-add-keywords
+             nil
+             '(("[,;:.]" 0 'font-lock-punctuation-face)))))
+
+(defun my/add-punctuation-for-lang (lang)
+  "Add punctuation highlighting for LANG tree-sitter mode."
+  (setq-local treesit-font-lock-settings
+              (append treesit-font-lock-settings
+                      (treesit-font-lock-rules
+                       :language lang
+                       :feature 'punctuation  
+                       :override t
+                       '([","  "." ";" ":"] @font-lock-punctuation-face))))
+  (when (listp treesit-font-lock-feature-list)
+    (setq-local treesit-font-lock-feature-list
+                (mapcar (lambda (level)
+                          (if (equal level (car (last treesit-font-lock-feature-list)))
+                              (append level '(punctuation))
+                            level))
+                        treesit-font-lock-feature-list)))
+  (treesit-major-mode-setup))
+
+;; Apply to modes
+(add-hook! 'go-ts-mode-hook (lambda () (my/add-punctuation-for-lang 'go)))
+(add-hook! 'typescript-ts-mode-hook (lambda () (my/add-punctuation-for-lang 'typescript)))
+
+;; This determines the style of line numbers in effect. If set to `nil', line
+;; numbers are disabled. For relative line numbers, set this to `relative'.
+(setq! display-line-numbers-type 't)
+
+;; If you use `org' and don't want your org files in the default locatio below,
+;; change `org-directory'. It must be set before org loads!
+(setq org-directory "~/org/")
+
+
+;; Whenever you reconfigure a package, make sure to wrap your config in an
+;; `after!' block, otherwise Doom's defaults may override your settings. E.g.
+;;
+;;   (after! PACKAGE
+;;     (setq x y))
+;;
+;; The exceptions to this rule:
+;;
+;;   - Setting file/directory variables (like `org-directory')
+;;   - Setting variables which explicitly tell you to set them before their
+;;     package is loaded (see 'C-h v VARIABLE' to look up their documentation).
+;;   - Setting doom variables (which start with 'doom-' or '+').
+;;
+;; Here are some additional functions/macros that will help you configure Doom.
+;;
+;; - `load!' for loading external *.el files relative to this one
+;; - `use-package!' for configuring packages
+;; - `after!' for running code after a package has loaded
+;; - `add-load-path!' for adding directories to the `load-path', relative to
+;;   this file. Emacs searches the `load-path' when you load packages with
+;;   `require' or `use-package'.
+;; - `map!' for binding new keys
+;;
+;; To get information about any of these functions/macros, move the cursor over
+;; the highlighted symbol at press 'K' (non-evil users must press 'C-c c k').
+;; This will open documentation for it, including demos of how they are used.
+;; Alternatively, use `C-h o' to look up a symbol (functions, variables, faces,
+;; etc).
+;;
+;; You can also try 'gd' (or 'C-c c d') to jump to their definition and see how
+;; they are implemented.
+
+;; no dired polution
+(setf dired-kill-when-opening-new-dired-buffer t)
+
+(after! tramp
+  (setq! remote-file-name-inhibit-locks t
+         tramp-use-scp-direct-remote-copying t
+         remote-file-name-inhibit-auto-save-visited t
+         tramp-copy-size-limit (* 1024 1024))) ;; 1MB
+
+(setq-default
+ tab-width 2
+ standard-indent 2
+ evil-shift-width 2
+ go-ts-mode-indent-offset 2
+ c-ts-common-indent-offset 2
+ typescript-ts-mode-indent-offset 2
+ )
+
+
+(use-package! forge-core
+  :config
+
+  ;; (push
+  ;;  '("gitlab.domain.com" "gitlab.domain.com/api/v4"
+  ;;    "gitlab.domain.com" forge-gitlab-repository)
+  ;;  forge-alist)
+  )
+
+(map!
+ :nv "] e" #'flycheck-next-error
+ :nv "[ e" #'flycheck-previous-error
+
+ ;; :nv "] e" #'flymake-goto-next-error
+ ;; :nv "[ e" #'flymake-goto-prev-error
+ :nv "g t" #'+lookup/type-definition
+ ;; :nv "g D" nil
+ :mn "g D" #'+lookup/references
+
+ :nvi "S-<left>" #'evil-window-left
+ :nvi "S-<right>" #'evil-window-right
+ :nvi "S-<up>" #'evil-window-up
+ :nvi "S-<down>" #'evil-window-down
+
+ :m "C-w <left>" #'+evil/window-move-left
+ :m "C-w <right>" #'+evil/window-move-right
+ :m "C-w <up>" #'+evil/window-move-up
+ :m "C-w <down>" #'+evil/window-move-down
+
+ "s-<left>" #'back-to-indentation
+ "s-<right>" #'end-of-line
+
+ "M-ъ" (lambda () (interactive) (insert "="))
+ "M-Ъ" (lambda () (interactive) (insert "+"))
+ "M-ь" (lambda () (interactive) (insert "-"))
+ "M-Ь" (lambda () (interactive) (insert "_"))
+
+ :mnv "g C-c" #'evilnc-copy-and-comment-lines
+
+ :map dired-mode-map
+ :mn "M-p" #'dirvish-move
+ )
+
+(defun my/smart-lookup ()
+  "Smart lookup function that both finding definitions and references.
+
+If point is on a definition, show references.
+If point is on a reference, jump to definition."
+  (interactive)
+  (let* ((identifier (xref-backend-identifier-at-point (xref-find-backend)))
+         (defs (xref-backend-definitions (xref-find-backend) identifier))
+         (current-pos (point))
+         (is-definition nil))
+    (when defs
+      (dolist (def defs)
+        (let ((def-loc (xref-item-location def)))
+          (when (and def-loc
+                     (= current-pos
+                        (save-excursion
+                          (goto-char (xref-location-marker def-loc))
+                          (point))))
+            (setq is-definition t)))))
+    (if is-definition
+        (xref-find-references identifier)
+      (xref-find-definitions identifier))))
+
+;; Bind the function to a key combination (e.g., `C-]`).
+(map! :n "C-]" #'my/smart-lookup)
+
+
+
+
+(defvar my-im (shell-command-to-string "im-select")
+  "Stored imput method for evil state swithing.")
+
+(defun my-exchange-im ()
+  "Swaps initial value of \"my-im\" with current input method."
+  (let ((tmp my-im)                     ;; keep old layaut
+        (inhibit-message t))            ;; comands no print to minibuffer
+    (setq! my-im (shell-command-to-string "im-select")) ;; get curretn layout
+    (if (not (equal tmp my-im))         ;; if different ; perfomance in some way
+        (shell-command (concat "im-select " tmp))))) ;; change to old
+(byte-compile #'my-exchange-im)
+
+(add-hook 'evil-insert-state-entry-hook 'my-exchange-im) ;; what we do when enter insert mode
+(add-hook 'evil-insert-state-exit-hook 'my-exchange-im)  ;; what we do when enter normal mode
+
+
+
+(use-package! which-key
+  :config
+
+  (setq!
+   which-key-show-remaining-keys t
+   which-key-add-column-padding 0
+   which-key-dont-use-unicode nil
+   ;; bugus in some reason
+   ;; which-key-show-operator-state-maps t
+   ;; adds keys borowser in which-key
+   which-key-use-C-h-commands t
+   which-key-compute-remaps t
+   which-key-idle-delay 0.250
+   which-key-separator " "
+   ;; which-key-replacement-alist '(
+   ;;                               (("SPC" . nil) . ("␠" . nil)) ;; Space icon
+   ;;                               (("RET" . nil) . ("␍" . nil)) ;; Return icon
+   ;;                               (("TAB" . nil) . ("￫" . nil)) ;; Tab icon
+   ;;                               (("ESC" . nil) . ("␛" . nil)) ;; Escape icon
+   ;;                               (("DEL" . nil) . ("␡" . nil))
+   ;;                               )
+   )
+  )
+
+(after! lispy
+  ;; illuminate annoying screen/buffer movement
+  ;; when editing in lispy-mode
+  (setq lispy-recenter nil))
+
+;; set emacs ask for .gpg files passphrase
+(setq epg-pinentry-mode 'loopback)
+
+
+
+(defun my/go-toggle-exported ()
+  "Toggle the export status (public/private) of a Go symbol at point.
+
+If the symbol starts with an uppercase letter (exported), it is made private by
+changing its first letter to lowercase. Otherwise, it is made public by
+capitalizing the first letter. The function then calls \"eglot-rename\" to
+refactor the change across the project."
+  (interactive)
+  (let* ((symbol (thing-at-point 'symbol t)))
+    (if (not symbol)
+        (message "No symbol at point")
+      (let* ((first-char (substring symbol 0 1))
+             (new-first (if (string= first-char (upcase first-char))
+                            (downcase first-char)
+                          (upcase first-char)))
+             (new-name (concat new-first (substring symbol 1))))
+        (message "Renaming %s to %s" symbol new-name)
+        (eglot-rename new-name)))))
+
+(map! :n "M-p" nil
+      :n :desc "Toggle Go Exported Symbol" "M-p" #'my/go-toggle-exported)
+
+(use-package! vterm
+  :config
+  (map! :map vterm-mode-map
+        "M-]" nil
+        "M-1" nil
+        "M-2" nil
+        "M-3" nil
+        "M-4" nil
+        "M-5" nil
+        "M-6" nil
+        "M-7" nil
+        "M-8" nil
+        "M-9" nil
+        "M-0" nil
+        )
+  )
+
+(use-package! iflipb
+  :config
+
+  ;; TODO: try to adopt this approach later.
+  ;; or reseach default iflipb-buffer-list-function variants.
+  ;; ido - variant looks ambicious, but probubly i need adopt vertico or "spc ," shortcut approach
+  ;; NOTE: this buffer list don't fit this usecase properly.
+  ;; Default buffer-list do reordering on swithing, but this not.
+  ;; (setf iflipb-buffer-list-function #'doom-real-buffer-list)
+
+  ;; (setf iflipb-buffer-list-function (lambda () (doom-buffer-list (selected-frame))))
+  ;; (setf iflipb-ignore-buffers
+  ;;       (lambda (buf)
+  ;;         (and-let*
+  ;;             (;; (workspace (+workspace-current))
+  ;;              ;; ((not (+workspace-contains-buffer-p buf workspace)))
+  ;;              ((not (+popup-buffer-p buf)))
+  ;;              ;; ((not (help buffer p)))
+  ;;              ;; ((not (doom-unreal-buffer-p buf)))
+  ;;              )))
+  ;;       )
+
+  (setf iflipb-wrap-around t)
+
+  (map! "M-]" 'iflipb-next-buffer
+        "M-[" 'iflipb-previous-buffer))
+
+
+(use-package! drag-stuff
+  :config
+  (drag-stuff-global-mode 1)
+
+  ;; good for evil + qwerty, but not colemack
+  ;; (map! :v "J" 'drag-stuff-down :v "K" 'drag-stuff-up)
+
+  (map! :nvi "s-<up>" #'drag-stuff-up
+        :nvi "s-<down>" #'drag-stuff-down))
+
+
+
+(defun my/+popup/toggle-focus ()
+  "Toggle any visible popups.
+
+If no popups are available, display the *Messages* buffer in a popup window.
+Also moves cursor to the popup window when opened.
+Modification of +popup/toggle"
+  (interactive)
+  (let ((+popup--inhibit-transient t))
+    (cond ((+popup-windows) (+popup/close-all t))
+          ((ignore-errors
+             (prog1 (+popup/restore)
+               (when-let ((popup-windows (+popup-windows)))
+                 (select-window (car popup-windows))))))
+          ((progn
+             (display-buffer (get-buffer "*Messages*"))
+             (when-let ((win (get-buffer-window "*Messages*")))
+               (select-window win)))))))
+(map! "C-`" #'my/+popup/toggle-focus)
+
+
+
+(map!
+ :n "C-w D" #'kill-buffer-and-window
+ :n "C-w C" #'kill-buffer-and-window)
+
+
+
+
+;; save current keyboard layout if it changed in other os-window
+(defvar my/im-focus (shell-command-to-string "im-select"))
+
+(defun my/save-keyboard-layout-on-focus ()
+  (let ((tmp my/im-focus) ;; keep old layaut
+        (inhibit-message t)) ;; comands no print to minibuffer
+    (setq! my/im-focus (shell-command-to-string "im-select")) ;; get current layout
+    (if (not (equal tmp my/im-focus)) ;; if different ; perfomance in some way
+        (shell-command (concat "im-select " tmp)))) ;; change to old
+  )
+;; (add-function :after after-focus-change-function
+;;               #'my/save-keyboard-layout-on-focus)
+
+
+
+
+(use-package! dape
+  :config
+  (setq! dape-request-timeout 300)
+  (setf (alist-get 'dlv-test dape-configs)
+        '(modes (go-mode go-ts-mode)
+          ensure dape-ensure-command
+          command "dlv"
+          command-args ("dap" "--listen" "127.0.0.1::autoport")
+          command-cwd (file-name-directory (buffer-file-name))
+          command-insert-stderr t
+          port :autoport
+          :request "launch"
+          :mode "test"
+          :type "go"
+          :program "."
+          :args ["-test.v" (format "-test.run=%s" (which-function))
+                 ]))
+
+  (setf (alist-get 'dlv-attach-wait dape-configs)
+        '(modes (go-mode go-ts-mode)
+          ensure dape-ensure-command
+          command "dlv"
+          command-args ("dap" "--listen" "127.0.0.1::autoport")
+          command-insert-stderr t
+          port :autoport
+          :request "attach"
+          :mode "local"
+          :type "go"
+          :waitFor "process")
+        )
+  (setf (alist-get 'dlv-attach-pid dape-configs)
+        '(modes (go-mode go-ts-mode)
+          ensure dape-ensure-command
+          command "dlv"
+          command-args ("dap" "--listen" "127.0.0.1::autoport")
+          command-insert-stderr t
+          port :autoport
+          :request "attach"
+          :mode "local"
+          :type "go"
+          :pid "")
+        )
+
+  ;; Emacs configuration to connect to external dlv
+  (setf (alist-get 'dlv-connect-remote dape-configs)
+        '(modes (go-mode go-ts-mode)
+          host "127.0.0.1"
+          port 62345
+          :request "attach"
+          :type "go"
+          :mode "remote"))
+
+  )
+
+
+
+(defun my/go-test-coverage-auto ()
+  "Run go tests with coverage, display results, and clean up profile file."
+  (interactive)
+  (let* ((coverage-file (concat (file-name-base (buffer-file-name)) "-coverage.out"))
+         (result (shell-command (format "go test -coverprofile=%s" coverage-file)))
+         (gocov-buffer (concat (file-name-nondirectory (buffer-file-name)) "<gocov>"))
+         )
+
+    (if (= result 0)
+        (progn (go-coverage coverage-file) ;; Display coverage in Emacs
+               (when (get-buffer gocov-buffer) ;; Switch to coverage buffer
+                 (if-let ((window (get-buffer-window gocov-buffer)))
+                     (select-window window)
+                   (switch-to-buffer-other-window gocov-buffer)))
+               (when (file-exists-p coverage-file) ;; Delete the coverage profile file
+                 (delete-file coverage-file))
+               (message "Coverage analysis complete and profile cleaned up"))
+      (message (format "go test exited with code %d" result)))))
+(map! :after go-mode
+      :map go-mode-map
+      :localleader
+      (:prefix ("t" . "test")
+       :desc "Test with coverage" "c" #'my/go-test-coverage-auto))
+
+;; Harper language server configuration for the famous text modes
+(with-eval-after-load 'eglot
+
+  ;; Git and version control
+  (add-to-list 'eglot-server-programs '(git-commit-mode . ("harper-ls" "--stdio")) t)
+  (add-to-list 'eglot-server-programs '(forge-post-mode . ("harper-ls" "--stdio")) t)
+  (add-to-list 'eglot-server-programs '(magit-edit-mode . ("harper-ls" "--stdio")) t)
+
+  ;; Core text modes
+  (add-to-list 'eglot-server-programs '(markdown-mode . ("harper-ls" "--stdio")) t)
+  (add-to-list 'eglot-server-programs '(org-mode . ("harper-ls" "--stdio")) t)
+
+  ;; Documentation modes
+  (add-to-list 'eglot-server-programs '(rst-mode . ("harper-ls" "--stdio")) t)
+  (add-to-list 'eglot-server-programs '(plantuml-mode . ("harper-ls" "--stdio")) t)
+  (add-to-list 'eglot-server-programs '(texinfo-mode . ("harper-ls" "--stdio")) t)
+  (add-to-list 'eglot-server-programs '(adoc-mode . ("harper-ls" "--stdio")) t)
+
+  (add-to-list 'eglot-server-programs '(text-mode . ("harper-ls" "--stdio")) t)
+  (add-to-list 'eglot-server-programs '(fundamental-mode . ("harper-ls" "--stdio")) t)
+
+  ;; Optional: Auto-start eglot in these modes
+  (defun my/auto-start-harper-modes ()
+    "Auto-start eglot for harper-enabled text modes."
+    (when (memq major-mode '(text-mode org-mode markdown-mode
+                             git-commit-mode forge-post-mode rst-mode))
+      (eglot-ensure)))
+
+  ;; Add hooks for auto-starting (optional)
+  (add-hook 'text-mode-hook #'my/auto-start-harper-modes)
+  (add-hook 'org-mode-hook #'my/auto-start-harper-modes)
+  (add-hook 'markdown-mode-hook #'my/auto-start-harper-modes)
+  (add-hook 'git-commit-mode-hook #'my/auto-start-harper-modes)
+  (add-hook 'forge-post-mode-hook #'my/auto-start-harper-modes)
+  )
+
+
+(use-package! eglot
+  :config
+  (setq-default eglot-workspace-configuration
+                '(:gopls (:staticcheck t
+                          :semanticTokens t
+                          :analyses (:unusedparams t
+                                     :unusedwrite t))
+                  :harper-ls (:linters (:SpellCheck :json-false
+                                        :SentenceCapitalization :json-false))))
+
+  (setq! eglot-sync-connect nil
+         eglot-extend-to-xref t
+         eglot-autoshutdown t))
+
+
+(defun my/inspect-semtok ()
+  "Show semantic token type and modifiers at point with applied faces."
+  (interactive)
+  (let* ((pos (point))
+         (symbol (thing-at-point 'symbol t))
+         (semtok-info (get-text-property pos 'eglot-semantic-token)))
+
+    (if (not semtok-info)
+        (message "No semantic token at point")
+      (let* ((type-idx (car semtok-info))
+             (modifier-bits (cdr semtok-info))
+             (semtok-cap (eglot-server-capable :semanticTokensProvider))
+             (legend (plist-get semtok-cap :legend))
+             (token-types (plist-get legend :tokenTypes))
+             (token-modifiers (plist-get legend :tokenModifiers)))
+
+        (if (or (null token-types) (null token-modifiers)) (message "Error: Legend structure - types: %S, mods: %S" token-types token-modifiers)
+          (let* ((token-type (when (vectorp token-types) (aref token-types type-idx)))
+                 (modifiers (cl-loop for i from 0 below (length token-modifiers)
+                                     when (> (logand modifier-bits (ash 1 i)) 0)
+                                     collect (aref token-modifiers i)))
+                 ;; Look up faces
+                 (type-face (and (boundp 'eglot-semantic-tokens-faces)
+                                 (cdr (assoc token-type eglot-semantic-tokens-faces))))
+                 (modifier-faces (mapcar
+                                  (lambda (mod) (and (boundp 'eglot-semantic-tokens-modifier-faces)
+                                                     (cdr (assoc mod eglot-semantic-tokens-modifier-faces))))
+                                  modifiers)))
+
+            ;; Format type with face
+            (let ((type-str (if type-face (format "%s [%s]" token-type type-face)
+                              (format "%s" token-type)))
+                  ;; Format modifiers with faces
+                  (mods-str (if modifiers (format "(%s)"
+                                                  (mapconcat (lambda (i)
+                                                               (let ((mod (nth i modifiers))
+                                                                     (face (nth i modifier-faces)))
+                                                                 (if face (format "%s [%s]" mod face)
+                                                                   mod)))
+                                                             (number-sequence 0 (1- (length modifiers)))
+                                                             " "))
+                              "()")))
+              (message "Symbol: %s | Type: %s | Modifiers: %s" symbol type-str mods-str))))))))
+
+(use-package! apheleia
+  :config
+  (setf (alist-get 'golines apheleia-formatters)
+        '("golines"))
+
+  (setf (alist-get 'go-mode apheleia-mode-alist)
+        '(golines))
+
+  (setf (alist-get 'go-ts-mode apheleia-mode-alist)
+        '(golines))
+
+  (setq-hook! 'go-mode-hook +format-with 'golines)
+  (setq-hook! 'go-ts-mode-hook +format-with 'golines)
+  )
+
+
+(setq org-latex-create-formula-image-program 'imagemagick)
+
+
+(defun my/round-csv-floats-to-2-decimals ()
+  "Round all floating point numbers in CSV to 2 decimal places."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (forward-line 1) ; Skip header
+    (while (not (eobp))
+      (let ((line-start (point)))
+        (end-of-line)
+        (let ((line-end (point)))
+          (goto-char line-start)
+          (while (re-search-forward "\\([0-9]+\\.[0-9]\\{3,\\}\\)" line-end t)
+            (let ((num (string-to-number (match-string 1))))
+              (replace-match (format "%.2f" num) t t)))
+          (forward-line 1))))))
+
+
+
+(use-package! plantuml-mode
+  :mode ("\\.puml\\'" . plantuml-mode)
+  :config
+
+  (setq! plantuml-indent-level 2)
+
+  ;; Set PNG as default output format
+  (setq! plantuml-default-exec-mode 'executable
+         plantuml-output-type "png"
+         plantuml-server-url "")
+  
+  )
+
+(after! flycheck
+  (setq!  flycheck-checker-error-threshold 1000)
+  )
+
+(use-package! treesit-auto
+  :custom
+  (treesit-auto-install 'prompt)
+  :config
+  (treesit-auto-add-to-auto-mode-alist 'all)
+  ;; (global-treesit-auto-mode)
+  (setq! major-mode-remap-alist
+         '((yaml-mode . yaml-ts-mode)
+           (typescript-mode . typescript-ts-mode)
+           (json-mode . json-ts-mode)
+           (css-mode . css-ts-mode)
+           (python-mode . python-ts-mode)
+           (go-mode . go-ts-mode)
+           (javascript-mode . javascript-ts-mode)
+           ))
+  )
+
+(setq! major-mode-remap-alist
+       '((yaml-mode . yaml-ts-mode)
+         (typescript-mode . typescript-ts-mode)
+         (json-mode . json-ts-mode)
+         (go-mode . go-ts-mode)
+         ))
+
+(after! smartparens
+  (setq! sp-autoskip-closing-pair nil)
+  (dolist (brace '("(" "{" "["))        ;; {|} <RET> not expands without Shift
+    (sp-pair brace nil
+             :post-handlers '(("||\\n[i]" "S-RET") ("| " "SPC"))))
+  )
+
+(use-package! ellama
+  :config
+  (require 'llm-ollama)
+  (require 'llm-openai)
+  (setq ellama-provider
+        (make-llm-ollama
+         :host "192.168.31.185"
+         :port 11434
+         :chat-model "deepseek-coder"
+         :embedding-model "deepseek-coder")))
+
+(after! dirvish
+  (setq! dirvish-use-header-line nil
+         dirvish-use-mode-line nil))
+
+
+(after! image-mode
+  (setq! image-auto-resize 'fit-window))
+
+(after! org-mode
+  (global-org-modern-mode -1)
+  (remove-hook 'org-mode-hook #'org-modern-mode))
+
+(map! :leader
+      :desc "Make" "o m" #'+make/run 
+      :desc "Make last" "o M" #'+make/run-last)
