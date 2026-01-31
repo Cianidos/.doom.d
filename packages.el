@@ -20,6 +20,11 @@
 (package! ellama :disable t)
 (package! d2-mode)
 
+(package! evil-textobj-tree-sitter )
+
+(package! evil-ts-obj :recipe (:host github :repo "dvzubarev/evil-ts-obj") :disable t)
+
+
 ;; ;; Unpin the built-in eglot (since Emacs 30 ships with it)
 ;; (unpin! eglot)
 ;; ;; Use the eglot-semtok fork instead

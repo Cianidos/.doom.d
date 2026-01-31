@@ -1,0 +1,7 @@
+# -*- mode: snippet -*-
+# name: if err != nil { return ... }
+# key: retife
+# --
+if ${1:err} != nil {
+	return ${2:nil}, ${3:fmt.Errorf("${4:}: %w", $1)}
+}$0
