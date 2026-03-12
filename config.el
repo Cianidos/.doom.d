@@ -63,11 +63,6 @@
 
 
 
-(use-package! rainbow-delimiters
-  :config
-  (add-hook 'prog-mode-hook #'rainbow-delimiters-mode)
-  )
-
 (add-hook 'prog-mode-hook
           (lambda ()
             (font-lock-add-keywords
@@ -156,14 +151,6 @@
  )
 
 
-(use-package! forge-core
-  :config
-
-  ;; (push
-  ;;  '("gitlab.domain.com" "gitlab.domain.com/api/v4"
-  ;;    "gitlab.domain.com" forge-gitlab-repository)
-  ;;  forge-alist)
-  )
 
 (map!
  :nv "] e" #'flycheck-next-error
@@ -244,9 +231,7 @@ If point is on a reference, jump to definition."
 
 
 
-(use-package! which-key
-  :config
-
+(after! which-key
   (setq!
    which-key-show-remaining-keys t
    which-key-add-column-padding 0
@@ -302,20 +287,51 @@ refactor the change across the project."
 
 (use-package! vterm
   :config
+  ;; Use emacs state so all keys pass through to the terminal naturally.
+  ;; ESC reaches the shell. C-g still works as Emacs abort.
+  (evil-set-initial-state 'vterm-mode 'emacs)
+
+  (setq vterm-max-scrollback 10000
+        vterm-copy-mode-remove-fake-newlines t
+        ;; Buffer names track the shell title (set by vterm_prompt_end in bash)
+        vterm-buffer-name-string "vterm %s")
+
+  ;; Register commands callable from shell via vterm_cmd
+  (dolist (cmd '(("find-file"              find-file)
+                 ("find-file-other-window" find-file-other-window)
+                 ("magit-status"           magit-status)
+                 ("dired"                  dired)
+                 ("message"               message)))
+    (add-to-list 'vterm-eval-cmds cmd))
+
   (map! :map vterm-mode-map
+        ;; Unset number/bracket keys that were being swallowed by Doom/iflipb
         "M-]" nil
-        "M-1" nil
-        "M-2" nil
-        "M-3" nil
-        "M-4" nil
-        "M-5" nil
-        "M-6" nil
-        "M-7" nil
-        "M-8" nil
-        "M-9" nil
-        "M-0" nil
-        )
-  )
+        "M-1" nil "M-2" nil "M-3" nil "M-4" nil "M-5" nil
+        "M-6" nil "M-7" nil "M-8" nil "M-9" nil "M-0" nil
+
+        ;; Window navigation (must be explicit since we're in emacs state)
+        "S-<left>"  #'evil-window-left
+        "S-<right>" #'evil-window-right
+        "S-<up>"    #'evil-window-up
+        "S-<down>"  #'evil-window-down
+
+        ;; Send shift+return to the terminal instead of letting Emacs handle it
+        "S-<return>" (lambda () (interactive) (vterm-send-key "RET" t nil nil))
+
+        ;; Copy-mode: buffer becomes read-only, evil normal state activates,
+        ;; you get vim motions, / search, y yank, etc.
+        "C-c C-t" #'vterm-copy-mode)
+
+  (map! :map vterm-copy-mode-map
+        :n "q" #'vterm-copy-mode
+        :n "i" #'vterm-copy-mode)
+
+  (add-hook 'vterm-copy-mode-hook
+            (lambda ()
+              (if vterm-copy-mode
+                  (evil-normal-state)
+                (evil-emacs-state)))))
 
 (use-package! iflipb
   :config
@@ -648,13 +664,6 @@ Modification of +popup/toggle"
            ))
   )
 
-(setq! major-mode-remap-alist
-       '((yaml-mode . yaml-ts-mode)
-         (typescript-mode . typescript-ts-mode)
-         (json-mode . json-ts-mode)
-         (go-mode . go-ts-mode)
-         ))
-
 (after! smartparens
   (setq! sp-autoskip-closing-pair nil)
   (dolist (brace '("(" "{" "["))        ;; {|} <RET> not expands without Shift
@@ -681,7 +690,7 @@ Modification of +popup/toggle"
 (after! image-mode
   (setq! image-auto-resize 'fit-window))
 
-(after! org-mode
+(after! org
   (global-org-modern-mode -1)
   (remove-hook 'org-mode-hook #'org-modern-mode))
 
@@ -776,7 +785,7 @@ Modification of +popup/toggle"
 (map! :leader "l u" 'my/unwrap)
 
 
-(setq! compilation-max-output-line-length nil)
+(setq-default compilation-max-output-line-length nil)
 
 (use-package! magit
   :config
