@@ -25,7 +25,7 @@
 ;;      doom-variable-pitch-font (font-spec :family "Fira Sans" :size 13))
 ;;
 ;; TODO: determine curretnt resolution and adopt to current dpi or something like this
-(setq doom-font (font-spec :family "Iosevka" :weight 'light :size 50))
+(setq doom-font (font-spec :family "Iosevka" :weight 'light :size 40))
 
 ;; If you or Emacs can't find your font, use 'M-x describe-font' to look them
 ;; up, `M-x eval-region' to execute elisp code, and 'M-x doom/reload-font' to
@@ -406,52 +406,52 @@ Modification of +popup/toggle"
   (setq! dape-request-timeout 300)
   (setf (alist-get 'dlv-test dape-configs)
         '(modes (go-mode go-ts-mode)
-                ensure dape-ensure-command
-                command "dlv"
-                command-args ("dap" "--listen" "127.0.0.1::autoport")
-                command-cwd (file-name-directory (buffer-file-name))
-                command-insert-stderr t
-                port :autoport
-                :request "launch"
-                :mode "test"
-                :type "go"
-                :program "."
-                :args ["-test.v" (format "-test.run=%s" (which-function))
-                       ]))
+          ensure dape-ensure-command
+          command "dlv"
+          command-args ("dap" "--listen" "127.0.0.1::autoport")
+          command-cwd (file-name-directory (buffer-file-name))
+          command-insert-stderr t
+          port :autoport
+          :request "launch"
+          :mode "test"
+          :type "go"
+          :program "."
+          :args ["-test.v" (format "-test.run=%s" (which-function))
+                 ]))
 
   (setf (alist-get 'dlv-attach-wait dape-configs)
         '(modes (go-mode go-ts-mode)
-                ensure dape-ensure-command
-                command "dlv"
-                command-args ("dap" "--listen" "127.0.0.1::autoport")
-                command-insert-stderr t
-                port :autoport
-                :request "attach"
-                :mode "local"
-                :type "go"
-                :waitFor "process")
+          ensure dape-ensure-command
+          command "dlv"
+          command-args ("dap" "--listen" "127.0.0.1::autoport")
+          command-insert-stderr t
+          port :autoport
+          :request "attach"
+          :mode "local"
+          :type "go"
+          :waitFor "process")
         )
   (setf (alist-get 'dlv-attach-pid dape-configs)
         '(modes (go-mode go-ts-mode)
-                ensure dape-ensure-command
-                command "dlv"
-                command-args ("dap" "--listen" "127.0.0.1::autoport")
-                command-insert-stderr t
-                port :autoport
-                :request "attach"
-                :mode "local"
-                :type "go"
-                :pid "")
+          ensure dape-ensure-command
+          command "dlv"
+          command-args ("dap" "--listen" "127.0.0.1::autoport")
+          command-insert-stderr t
+          port :autoport
+          :request "attach"
+          :mode "local"
+          :type "go"
+          :pid "")
         )
 
   ;; Emacs configuration to connect to external dlv
   (setf (alist-get 'dlv-connect-remote dape-configs)
         '(modes (go-mode go-ts-mode)
-                host "127.0.0.1"
-                port 62345
-                :request "attach"
-                :type "go"
-                :mode "remote"))
+          host "127.0.0.1"
+          port 62345
+          :request "attach"
+          :type "go"
+          :mode "remote"))
 
   )
 
@@ -479,7 +479,7 @@ Modification of +popup/toggle"
       :map go-mode-map
       :localleader
       (:prefix ("t" . "test")
-               :desc "Test with coverage" "c" #'my/go-test-coverage-auto))
+       :desc "Test with coverage" "c" #'my/go-test-coverage-auto))
 
 ;; Harper language server configuration for the famous text modes
 (with-eval-after-load 'eglot
@@ -506,7 +506,7 @@ Modification of +popup/toggle"
   (defun my/auto-start-harper-modes ()
     "Auto-start eglot for harper-enabled text modes."
     (when (memq major-mode '(text-mode org-mode markdown-mode
-                                       git-commit-mode forge-post-mode rst-mode))
+                             git-commit-mode forge-post-mode rst-mode))
       (eglot-ensure)))
 
   ;; Add hooks for auto-starting (optional)
@@ -522,11 +522,11 @@ Modification of +popup/toggle"
   :config
   (setq-default eglot-workspace-configuration
                 '(:gopls (:staticcheck t
-                                       :semanticTokens t
-                                       :analyses (:unusedparams t
-                                                                :unusedwrite t))
-                         :harper-ls (:linters (:SpellCheck :json-false
-                                                           :SentenceCapitalization :json-false))))
+                          :semanticTokens t
+                          :analyses (:unusedparams t
+                                     :unusedwrite t))
+                  :harper-ls (:linters (:SpellCheck :json-false
+                                        :SentenceCapitalization :json-false))))
 
   (setq! eglot-sync-connect nil
          eglot-extend-to-xref t
@@ -757,9 +757,31 @@ Modification of +popup/toggle"
                                   (call_expression) 
                                   (identifier)
                                   (nil)] @expr)))))
+
+  ;; Outer: entire call including function name and parens
+  (define-key evil-outer-text-objects-map "c"
+              (evil-textobj-tree-sitter-get-textobj "call"
+                '((go-ts-mode . ([(call_expression) @call])))))
+  
+  ;; Inner: just the arguments (without parens)
+  (define-key evil-inner-text-objects-map "c"
+              (evil-textobj-tree-sitter-get-textobj "call.inner"
+                '((go-ts-mode . ((argument_list
+                                  (_) @call.inner))))))
   )
 
-(use-package! evil-ts-obj
-  :after evil
+(defalias 'my/unwrap
+  (kmacro "d i ( d a c P C-p"))
+
+(map! :leader "l u" 'my/unwrap)
+
+
+(setq! compilation-max-output-line-length nil)
+
+(use-package! magit
   :config
-  (evil-ts-obj-mode))
+  (setq! magit-status-margin '(t age-abbreviated magit-log-margin-width t 20)))
+
+
+
+(setq! treesit-max-buffer-size 100000000)

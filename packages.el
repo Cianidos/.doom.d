@@ -22,8 +22,9 @@
 
 (package! evil-textobj-tree-sitter )
 
-(package! evil-ts-obj :recipe (:host github :repo "dvzubarev/evil-ts-obj") :disable t)
+(package! evil-ts-obj :recipe (:host github :repo "dvzubarev/evil-ts-obj") )
 
+(package! eca :recipe (:host github :repo "editor-code-assistant/eca-emacs" :files ("*.el")))
 
 ;; ;; Unpin the built-in eglot (since Emacs 30 ships with it)
 ;; (unpin! eglot)
