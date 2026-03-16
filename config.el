@@ -132,6 +132,10 @@
 ;; You can also try 'gd' (or 'C-c c d') to jump to their definition and see how
 ;; they are implemented.
 
+(after! server
+  (unless (server-running-p)
+    (server-start)))
+
 ;; no dired polution
 (setf dired-kill-when-opening-new-dired-buffer t)
 
@@ -151,6 +155,10 @@
  )
 
 
+
+(global-set-key (kbd "<XF86Copy>")  #'kill-ring-save)
+(global-set-key (kbd "<XF86Cut>")   #'kill-region)
+(global-set-key (kbd "<XF86Paste>") #'yank)
 
 (map!
  :nv "] e" #'flycheck-next-error
@@ -215,19 +223,20 @@ If point is on a reference, jump to definition."
 
 
 
-(defvar-local my/im (shell-command-to-string "im-select")
-  "Stored imput method for evil state swithing.")
+;; ;; commented due to experements with keyboard
+;; (defvar-local my/im (shell-command-to-string "im-select")
+;;   "Stored imput method for evil state swithing.")
 
-(defun my/exchange-im ()
-  "Swaps initial value of \"my/im\" with current input method."
-  (let ((tmp my/im)                     ;; keep old layaut
-        (inhibit-message t))            ;; comands no print to minibuffer
-    (setq-local my/im (shell-command-to-string "im-select")) ;; get curretn layout
-    (if (not (equal tmp my/im))         ;; if different ; perfomance in some way
-        (shell-command (concat "im-select " tmp))))) ;; change to old
+;; (defun my/exchange-im ()
+;;   "Swaps initial value of \"my/im\" with current input method."
+;;   (let ((tmp my/im)                     ;; keep old layaut
+;;         (inhibit-message t))            ;; comands no print to minibuffer
+;;     (setq-local my/im (shell-command-to-string "im-select")) ;; get curretn layout
+;;     (if (not (equal tmp my/im))         ;; if different ; perfomance in some way
+;;         (shell-command (concat "im-select " tmp))))) ;; change to old
 
-(add-hook 'evil-insert-state-entry-hook #'my/exchange-im) ;; what we do when enter insert mode
-(add-hook 'evil-insert-state-exit-hook #'my/exchange-im)  ;; what we do when enter normal mode
+;; (add-hook 'evil-insert-state-entry-hook #'my/exchange-im) ;; what we do when enter insert mode
+;; (add-hook 'evil-insert-state-exit-hook #'my/exchange-im)  ;; what we do when enter normal mode
 
 
 
@@ -292,7 +301,7 @@ refactor the change across the project."
   (evil-set-initial-state 'vterm-mode 'emacs)
 
   (setq vterm-max-scrollback 10000
-        vterm-copy-mode-remove-fake-newlines t
+        vterm-copy-mode-remove-fake-newlines nil
         ;; Buffer names track the shell title (set by vterm_prompt_end in bash)
         vterm-buffer-name-string "vterm %s")
 
@@ -306,7 +315,7 @@ refactor the change across the project."
 
   (map! :map vterm-mode-map
         ;; Unset number/bracket keys that were being swallowed by Doom/iflipb
-        "M-]" nil
+        "M-]" nil "M-[" nil
         "M-1" nil "M-2" nil "M-3" nil "M-4" nil "M-5" nil
         "M-6" nil "M-7" nil "M-8" nil "M-9" nil "M-0" nil
 
@@ -317,11 +326,13 @@ refactor the change across the project."
         "S-<down>"  #'evil-window-down
 
         ;; Send shift+return to the terminal instead of letting Emacs handle it
-        "S-<return>" (lambda () (interactive) (vterm-send-key "RET" t nil nil))
+        "S-<return>" #'vterm--self-insert
 
         ;; Copy-mode: buffer becomes read-only, evil normal state activates,
         ;; you get vim motions, / search, y yank, etc.
-        "C-c C-t" #'vterm-copy-mode)
+        "C-c C-t" #'vterm-copy-mode
+        "C-c C-z" (lambda () (interactive) (vterm-send "C-z"))
+        )
 
   (map! :map vterm-copy-mode-map
         :n "q" #'vterm-copy-mode
@@ -355,10 +366,24 @@ refactor the change across the project."
   ;;              )))
   ;;       )
 
+  ;; Workspace-aware buffer cycling (requires workspaces module)
+  ;; revert to nil to use global buffer list if workspaces cause issues
+  ;; (setf iflipb-buffer-list-function #'+workspace-buffer-list)
+  (defun my/workspace-buffer-list-live ()
+    (seq-filter #'buffer-live-p (+workspace-buffer-list)))
+  (setf iflipb-buffer-list-function #'my/workspace-buffer-list-live)
+
   (setf iflipb-wrap-around t)
 
   (map! "M-]" 'iflipb-next-buffer
-        "M-[" 'iflipb-previous-buffer))
+        "M-[" 'iflipb-previous-buffer)
+  )
+
+
+(after! persp-mode
+  ;; Prevent unreal buffers (popups, magit internals, etc.) from leaking into workspaces
+  (add-hook 'persp-add-buffer-on-after-change-major-mode-filter-functions
+            #'doom-unreal-buffer-p))
 
 
 (use-package! drag-stuff
@@ -789,7 +814,8 @@ Modification of +popup/toggle"
 
 (use-package! magit
   :config
-  (setq! magit-status-margin '(t age-abbreviated magit-log-margin-width t 20)))
+  (setq! magit-status-margin '(t age-abbreviated magit-log-margin-width t 20)
+         magit-uniquify-buffer-names t))
 
 
 
