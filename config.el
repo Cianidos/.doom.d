@@ -745,19 +745,36 @@ Modification of +popup/toggle"
       :desc "Make last" "o M" #'+make/run-last)
 
 (after! corfu
-  ;; Make TAB complete instead of cycle
-  (setq corfu-cycle nil
-        corfu-preselect 'directory)
-  
-  ;; Enable auto-completion for instant directory browsing
-  (setq corfu-auto t
+  (setq corfu-cycle t
+        corfu-preselect 'directory
+        corfu-auto t
         corfu-auto-delay 0.1
         corfu-auto-prefix 1)
-  
-  ;; Rebind keys
+
   (map! :map corfu-map
-        :i "TAB" #'corfu-complete
-        :i [tab] #'corfu-complete))
+        ;; TAB: complete common prefix (still useful for partial completion)
+        :i "TAB"   #'corfu-complete
+        :i [tab]   #'corfu-complete
+        ;; C-M-y: accept the selected candidate fully and insert it
+        :i "C-M-y" #'corfu-insert
+        ;; C-M-g: dismiss the completion popup
+        :i "C-M-g" #'corfu-quit))
+
+;; Vertico: C-M-y accepts candidate text without exiting the minibuffer.
+;; For directory paths this means "enter this directory and keep completing".
+(after! vertico
+  (map! :map vertico-map
+        "C-M-y" #'vertico-insert
+        "C-M-g" #'minibuffer-keyboard-quit))
+
+;; Smart TAB: yasnippet field navigation takes priority over corfu
+(after! (:and yasnippet corfu)
+  (defadvice! my/yas-before-corfu-a (&rest _)
+    :before-while #'corfu-insert
+    (not (yas-active-snippets)))
+  (map! :map yas-keymap
+        [tab]  #'yas-next-field-or-maybe-expand
+        "TAB"  #'yas-next-field-or-maybe-expand))
 
 
 
