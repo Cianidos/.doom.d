@@ -592,7 +592,45 @@ Modification of +popup/toggle"
 
   (setq! eglot-sync-connect nil
          eglot-extend-to-xref t
-         eglot-autoshutdown t))
+         eglot-autoshutdown t)
+
+  ;; Remove hover from eldoc — it shows stale colored type info that
+  ;; obscures the useful signature help (white text showing current argument).
+  ;; Hover docs are still available on demand via K (+lookup/documentation).
+  (add-hook 'eglot-managed-mode-hook
+            (defun my/eglot-eldoc-cleanup ()
+              (setq-local eldoc-documentation-functions
+                          (remove #'eglot-hover-eldoc-function
+                                  eldoc-documentation-functions))))
+
+  ;; Clean up hover docs (K): strip invisible markdown markup so yy copies
+  ;; clean text, thin out separators, and wrap prose to fill-column.
+  (defadvice! my/eglot-clean-markup-a (result)
+    :filter-return #'eglot--format-markup
+    (when (and result (stringp result))
+      (with-temp-buffer
+        (insert result)
+        (let ((inhibit-read-only t))
+          ;; Delete invisible text (code fence markers, bold/link syntax, etc.)
+          (goto-char (point-min))
+          (while (< (point) (point-max))
+            (if (get-text-property (point) 'invisible)
+                (delete-region (point)
+                               (or (next-single-property-change (point) 'invisible)
+                                   (point-max)))
+              (goto-char (or (next-single-property-change (point) 'invisible)
+                             (point-max)))))
+          ;; Strip leftover horizontal rules
+          (goto-char (point-min))
+          (while (re-search-forward "^-\\{3,\\}$" nil t)
+            (replace-match ""))
+          ;; Collapse 3+ blank lines to one
+          (goto-char (point-min))
+          (while (re-search-forward "\n\\{3,\\}" nil t)
+            (replace-match "\n\n"))
+          ;; Wrap prose to fill-column
+          (fill-region (point-min) (point-max)))
+        (string-trim (buffer-string))))))
 
 
 (defun my/inspect-semtok ()
@@ -690,8 +728,31 @@ Modification of +popup/toggle"
   )
 
 (after! flycheck
-  (setq!  flycheck-checker-error-threshold 1000)
-  )
+  (setq! flycheck-checker-error-threshold 1000
+         ;; Disable automatic error display — it fights with eldoc for the echo area.
+         ;; Errors are still marked inline; use s-e to see the message on demand.
+         flycheck-display-errors-function #'ignore)
+
+  ;; Kill the floating popup that hides under split windows
+  (after! flycheck-popup-tip
+    (flycheck-popup-tip-mode -1))
+
+  ;; s-e: show error at point on demand in echo area
+  (defun my/flycheck-show-error-at-point ()
+    "Show flycheck error at point in the echo area."
+    (interactive)
+    (let ((errors (flycheck-overlay-errors-at (point))))
+      (if errors
+          (message "%s"
+                   (mapconcat
+                    (lambda (err)
+                      (format "[%s] %s"
+                              (flycheck-error-level err)
+                              (flycheck-error-message err)))
+                    errors "\n"))
+        (message "No errors at point"))))
+
+  (map! :n "s-e" #'my/flycheck-show-error-at-point))
 
 (use-package! treesit-auto
   :custom
