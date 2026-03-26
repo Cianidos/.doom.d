@@ -370,7 +370,12 @@ refactor the change across the project."
   ;; revert to nil to use global buffer list if workspaces cause issues
   ;; (setf iflipb-buffer-list-function #'+workspace-buffer-list)
   (defun my/workspace-buffer-list-live ()
-    (seq-filter #'buffer-live-p (+workspace-buffer-list)))
+    "Workspace buffers in MRU order (buffer-list is MRU, filter to workspace)."
+    (let ((ws-bufs (+workspace-buffer-list)))
+      (seq-filter (lambda (buf)
+                    (and (buffer-live-p buf)
+                         (memq buf ws-bufs)))
+                  (buffer-list))))
   (setf iflipb-buffer-list-function #'my/workspace-buffer-list-live)
 
   (setf iflipb-wrap-around t)
@@ -383,7 +388,22 @@ refactor the change across the project."
 (after! persp-mode
   ;; Prevent unreal buffers (popups, magit internals, etc.) from leaking into workspaces
   (add-hook 'persp-add-buffer-on-after-change-major-mode-filter-functions
-            #'doom-unreal-buffer-p))
+            #'doom-unreal-buffer-p)
+
+  ;; Pin vterm and magit buffers to the workspace where they were created.
+  ;; Once a buffer belongs to a perspective, block it from being auto-added
+  ;; to a different one (this is the main anti-leak mechanism).
+  (defadvice! my/pin-buffer-to-workspace-a (fn buf &rest args)
+    :around #'persp-add-buffer-to-persp
+    (let ((buf (if (bufferp buf) buf (get-buffer buf))))
+      (if (and buf (buffer-live-p buf)
+               (with-current-buffer buf
+                 (derived-mode-p 'vterm-mode 'magit-mode))
+               (let ((dominated (persp--buffer-in-persps buf))
+                     (target (or (car args) (get-current-persp))))
+                 (and dominated (not (memq target dominated)))))
+          nil
+        (apply fn buf args)))))
 
 
 (use-package! drag-stuff
@@ -532,6 +552,7 @@ Modification of +popup/toggle"
 
   ;; Core text modes
   (add-to-list 'eglot-server-programs '(markdown-mode . ("harper-ls" "--stdio")) t)
+  (add-to-list 'eglot-server-programs '(markdown-ts-mode . ("harper-ls" "--stdio")) t)
   (add-to-list 'eglot-server-programs '(org-mode . ("harper-ls" "--stdio")) t)
 
   ;; Documentation modes
@@ -815,7 +836,16 @@ Modification of +popup/toggle"
 (use-package! magit
   :config
   (setq! magit-status-margin '(t age-abbreviated magit-log-margin-width t 20)
-         magit-uniquify-buffer-names t))
+         magit-uniquify-buffer-names t)
+
+  ;; Give magit buffers workspace-unique names so each workspace gets its own
+  (defadvice! my/magit-workspace-buffer-name-a (fn mode &optional value)
+    :around #'magit-generate-buffer-name-default-function
+    (let ((name (funcall fn mode value)))
+      (if (and (bound-and-true-p persp-mode)
+               (modulep! :ui workspaces))
+          (format "%s<%s>" name (+workspace-current-name))
+        name))))
 
 
 
