@@ -564,6 +564,20 @@ Modification of +popup/toggle"
          eglot-extend-to-xref t
          eglot-autoshutdown t)
 
+  ;; When semantic tokens are available, disable the overlapping tree-sitter
+  ;; features so the two systems don't fight over the same faces.
+  ;; Tree-sitter keeps: comment, string, keyword, bracket, delimiter, punctuation, operator
+  ;; Semantic tokens own: variable, function, type, definition, constant, property, number
+  (add-hook 'eglot-managed-mode-hook
+            (defun my/treesit-semtok-handoff ()
+              (when (and (fboundp 'treesit-parser-list) (treesit-parser-list))
+                (if (and (bound-and-true-p eglot--managed-mode)
+                         (ignore-errors (eglot-server-capable :semanticTokensProvider)))
+                    (treesit-font-lock-recompute-features
+                     nil '(definition variable function property type constant number))
+                  (treesit-font-lock-recompute-features
+                   '(definition variable function property type constant number) nil)))))
+
   ;; Remove hover from eldoc — it shows stale colored type info that
   ;; obscures the useful signature help (white text showing current argument).
   ;; Hover docs are still available on demand via K (+lookup/documentation).
