@@ -48,7 +48,8 @@
             (unless (and (fboundp 'treesit-parser-list) (treesit-parser-list))
               (font-lock-add-keywords
                nil
-               '(("[,;:.]" 0 'font-lock-punctuation-face))))))
+               '(("[()\\[\\]{}]" 0 'font-lock-bracket-face)
+                 ("[,;:.]" 0 'font-lock-punctuation-face))))))
 
 (defun my/add-punctuation-for-lang (lang)
   "Add punctuation highlighting for LANG tree-sitter mode."

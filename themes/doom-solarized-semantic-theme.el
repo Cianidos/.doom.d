@@ -133,7 +133,7 @@ Can be an integer to determine the exact padding."
    ((font-lock-bracket-face &override) :foreground noise)
    ((font-lock-delimiter-face &override) :foreground noise)
    ((font-lock-punctuation-face &override) :foreground noise)
-   ((font-lock-operator-face &override) :foreground fg)
+   ((font-lock-misc-punctuation-face &override) :foreground noise)
 
    ;; --- Types: keep yellow, drop italic ---
    ((font-lock-type-face &override) :slant 'normal)
@@ -144,9 +144,21 @@ Can be an integer to determine the exact padding."
    ;; --- Constants: violet, normal weight ---
    ((font-lock-constant-face &override) :foreground violet :weight 'normal)
 
+   ;; --- Variables: plain text ---
+   ((font-lock-variable-name-face &override) :foreground fg :weight 'normal)
+   ((font-lock-variable-use-face &override) :foreground fg)
+
    ;; --- Functions: plain text ---
    ((font-lock-function-name-face &override) :foreground fg)
    ((font-lock-function-call-face &override) :foreground fg)
+
+   ;; --- Properties ---
+   ((font-lock-property-name-face &override) :foreground fg)
+   ((font-lock-property-use-face &override) :foreground fg)
+
+   ;; --- Numbers & escapes ---
+   ((font-lock-number-face &override) :foreground violet)
+   ((font-lock-escape-face &override) :foreground orange)
 
    ;; --- Comments ---
    ((font-lock-comment-face &override)
@@ -164,9 +176,8 @@ Can be an integer to determine the exact padding."
    ;; Readonly/const: same violet as constants
    (eglot-semantic-readonly-face :foreground violet :weight 'normal)
    ;; Methods/functions: plain text
-   (eglot-semantic-method-face :foreground fg)
    (eglot-semantic-method :foreground fg)
-   (eglot-semantic-function-face :foreground fg)
+   (eglot-semantic-function :foreground fg)
 
    ;; --- Base UI ---
    ((line-number &override) :foreground base4)
