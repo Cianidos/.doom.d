@@ -446,16 +446,14 @@ Modification of +popup/toggle"
 
 
 
-;; save current keyboard layout if it changed in other os-window
-(defvar my/im-focus (shell-command-to-string "im-select"))
-
-(defun my/save-keyboard-layout-on-focus ()
-  (let ((tmp my/im-focus) ;; keep old layaut
-        (inhibit-message t)) ;; comands no print to minibuffer
-    (setq! my/im-focus (shell-command-to-string "im-select")) ;; get current layout
-    (if (not (equal tmp my/im-focus)) ;; if different ; perfomance in some way
-        (shell-command (concat "im-select " tmp)))) ;; change to old
-  )
+;; Input method focus tracking (disabled — uncomment the add-function to enable)
+;; (defvar my/im-focus (shell-command-to-string "im-select"))
+;; (defun my/save-keyboard-layout-on-focus ()
+;;   (let ((tmp my/im-focus)
+;;         (inhibit-message t))
+;;     (setq! my/im-focus (shell-command-to-string "im-select"))
+;;     (if (not (equal tmp my/im-focus))
+;;         (shell-command (concat "im-select " tmp)))))
 ;; (add-function :after after-focus-change-function
 ;;               #'my/save-keyboard-layout-on-focus)
 
@@ -470,7 +468,7 @@ Modification of +popup/toggle"
           ensure dape-ensure-command
           command "dlv"
           command-args ("dap" "--listen" "127.0.0.1::autoport")
-          command-cwd (file-name-directory (buffer-file-name))
+          command-cwd (or (and (buffer-file-name) (file-name-directory (buffer-file-name))) default-directory)
           command-insert-stderr t
           port :autoport
           :request "launch"
@@ -564,19 +562,10 @@ Modification of +popup/toggle"
   (add-to-list 'eglot-server-programs '(text-mode . ("harper-ls" "--stdio")) t)
   (add-to-list 'eglot-server-programs '(fundamental-mode . ("harper-ls" "--stdio")) t)
 
-  ;; Optional: Auto-start eglot in these modes
-  (defun my/auto-start-harper-modes ()
-    "Auto-start eglot for harper-enabled text modes."
-    (when (memq major-mode '(text-mode org-mode markdown-mode
-                             git-commit-mode forge-post-mode rst-mode))
-      (eglot-ensure)))
-
-  ;; Add hooks for auto-starting (optional)
-  (add-hook 'text-mode-hook #'my/auto-start-harper-modes)
-  (add-hook 'org-mode-hook #'my/auto-start-harper-modes)
-  (add-hook 'markdown-mode-hook #'my/auto-start-harper-modes)
-  (add-hook 'git-commit-mode-hook #'my/auto-start-harper-modes)
-  (add-hook 'forge-post-mode-hook #'my/auto-start-harper-modes)
+  ;; Auto-start harper in text-derived modes (covers org, markdown, git-commit, etc.)
+  (add-hook 'text-mode-hook #'eglot-ensure)
+  ;; forge-post-mode derives from markdown-mode, not text-mode in some versions
+  (add-hook 'forge-post-mode-hook #'eglot-ensure)
   )
 
 
