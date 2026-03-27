@@ -36,38 +36,19 @@
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
 
-;; (setq doom-theme 'doom-one)
-(setq! doom-theme 'doom-solarized-dark-high-contrast)
-(custom-set-faces!
-  '(font-lock-type-face :slant normal)
-  '(font-lock-delimiter-face :foreground "#2f4f4f")
-  '(font-lock-keyword-face :foreground "#2f4f4f")
-  '(font-lock-bracket-face :foreground "#2f4f4f")
-  '(font-lock-constant-face :foreground "#7a7ed2" :weight normal)
-  '(eglot-semantic-readonly-face :foreground "#7a7ed2" :weight normal)
-  '(font-lock-builtin-face :foreground unspecified)
-  '(eglot-semantic-definition-face :foreground unspecified :weight semi-bold :slant italic)
-  '(eglot-semantic-declaration-face :foreground unspecified :weight semi-bold :slant italic)
-  ;; TODO: wtw it is blue again
-  '(font-lock-function-name-face :foreground unspecified)
-  '(font-lock-function-call-face :foreground unspecified)
-  '(eglot-semantic-method-face :foreground unspecified)
-  '(eglot-semantic-method :foreground unspecified)
-
-  '(eglot-semantic-definition :foreground "#3c98e0")
-  
-  '(eglot-semantic-function-face :foreground unspecified)
-
-  '(font-lock-operator-face :foreground unspecified) ;; same as just text
-  )
+;; Semantic dimming theme — structural noise dimmed, definitions/constants highlighted
+(setq! doom-theme 'doom-solarized-semantic)
 
 
 
+;; Regex punctuation dimming for non-tree-sitter modes only
+;; (tree-sitter modes use my/add-punctuation-for-lang instead)
 (add-hook 'prog-mode-hook
           (lambda ()
-            (font-lock-add-keywords
-             nil
-             '(("[,;:.]" 0 'font-lock-punctuation-face)))))
+            (unless (and (fboundp 'treesit-parser-list) (treesit-parser-list))
+              (font-lock-add-keywords
+               nil
+               '(("[,;:.]" 0 'font-lock-punctuation-face))))))
 
 (defun my/add-punctuation-for-lang (lang)
   "Add punctuation highlighting for LANG tree-sitter mode."
