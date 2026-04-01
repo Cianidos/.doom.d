@@ -26,6 +26,8 @@
 
 (package! eca :recipe (:host github :repo "editor-code-assistant/eca-emacs" :files ("*.el")))
 
+(package! telega)
+
 ;; ;; Unpin the built-in eglot (since Emacs 30 ships with it)
 ;; (unpin! eglot)
 ;; ;; Use the eglot-semtok fork instead

@@ -366,11 +366,31 @@ refactor the change across the project."
         "M-[" 'iflipb-previous-buffer)
   )
 
+(load! "lisp/phony-projects")
+
+;; Telega root buffer without *...* so iflipb and buffer lists treat it as real.
+(after! telega
+  (setq telega-root-buffer-name "Telega"))
+
+;; Project switch action: completing-read between find-file and vterm.
+(defun my/project-switch-action (&optional project-root)
+  (pcase (completing-read "Open: " '("find-file" "vterm" "magit") nil t)
+    ("find-file" (doom-project-find-file project-root))
+    ("vterm"     (let ((default-directory (or project-root default-directory)))
+                   (+vterm/here nil)))
+    ("magit" (magit-status-setup-buffer project-root))))
+
+(after! projectile
+  (setq +workspaces-switch-project-function #'my/project-switch-action))
 
 (after! persp-mode
   ;; Prevent unreal buffers (popups, magit internals, etc.) from leaking into workspaces
   (add-hook 'persp-add-buffer-on-after-change-major-mode-filter-functions
             #'doom-unreal-buffer-p)
+
+  ;; Always create a new workspace when switching projects.
+  ;; Default 'non-empty renames main → project when main has no buffers.
+  (setq +workspaces-on-switch-project-behavior t)
 
   ;; Pin vterm and magit buffers to the workspace where they were created.
   ;; Once a buffer belongs to a perspective, block it from being auto-added
@@ -913,3 +933,21 @@ Modification of +popup/toggle"
 
 
 (setq! treesit-max-buffer-size 100000000)
+
+(use-package! telega
+  :commands telega
+  :config
+  (setq telega-server-libs-prefix (expand-file-name "~/opt/thirdparty/installation/tdlib"))
+  (setq telega-proxies
+        '((:server "127.0.0.1" :port 10808 :enable t
+           :type (:@type "proxyTypeHttp"))))
+
+  (setq telega-chat-show-reactions t)
+  (setq telega-chat-button-width '(0.25 15 30))
+  (global-telega-squash-message-mode 1)
+
+  ;; telega--addProxy ignores :enable from the plist (passes nil to enable-p),
+  ;; so proxies get added but disabled. Fix: pass :enable explicitly.
+  (defadvice! my/telega-addProxy-respect-enable-a (fn tl-proxy &optional enable-p callback)
+    :around #'telega--addProxy
+    (funcall fn tl-proxy (or enable-p (plist-get tl-proxy :enable)) callback)))
