@@ -324,7 +324,17 @@ refactor the change across the project."
             (lambda ()
               (if vterm-copy-mode
                   (evil-normal-state)
-                (evil-emacs-state)))))
+                (evil-emacs-state))))
+
+  ;; Pin vterm buffer names to the workspace where they were created.
+  ;; Sets vterm-buffer-name-string buffer-locally so every shell title update
+  ;; (OSC rename) keeps the workspace prefix — not just the initial name.
+  (add-hook 'vterm-mode-hook
+            (lambda ()
+              (when (and (bound-and-true-p persp-mode)
+                         (modulep! :ui workspaces))
+                (setq-local vterm-buffer-name-string
+                            (format "vterm<%s> %%s" (+workspace-current-name)))))))
 
 (use-package! iflipb
   :config
