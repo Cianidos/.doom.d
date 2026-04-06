@@ -374,13 +374,15 @@ refactor the change across the project."
 
 ;; Project switch action: completing-read between find-file and vterm.
 (defun my/project-switch-action (&optional project-root)
-  (pcase (completing-read "Open: " '("find-file" "vterm" "magit") nil t)
+  (pcase (completing-read "Open: " '("find-file" "vterm" "magit" "dired") nil t)
     ("find-file" (doom-project-find-file project-root))
     ("vterm"     (let ((default-directory (or project-root default-directory)))
                    (+vterm/here nil)))
-    ("magit" (magit-status-setup-buffer project-root))))
+    ("magit" (magit-status-setup-buffer project-root))
+    ("dired" (dired project-root))))
 
 (after! projectile
+  (projectile-cleanup-known-projects)
   (setq +workspaces-switch-project-function #'my/project-switch-action))
 
 (after! persp-mode
