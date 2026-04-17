@@ -8,7 +8,11 @@
 (package! iflipb)
 (package! drag-stuff)
 (package! glab)
-(package! gtea)
+;; `gtea' is no longer resolvable via straight's recipe repositories —
+;; disabled on the ghostel-migration branch to unblock `doom sync'.
+;; Also affects master; address there separately (either `:recipe' with an
+;; explicit Git URL or drop the package).
+(package! gtea :disable t)
 (package! gogs)
 (package! buck)
 
