@@ -410,14 +410,37 @@ refactor the change across the project."
 (after! telega
   (setq telega-root-buffer-name "Telega"))
 
-;; Project switch action: completing-read between find-file and vterm.
+;; Shell-command wrappers: open a fresh vterm and run CMD in it.
+(defun my/vterm-run (cmd)
+  "Open a new vterm buffer and run CMD."
+  (+vterm/here nil)
+  (vterm-send-string cmd)
+  (vterm-send-return))
+
+(defun my/term-claude ()
+  "Open a terminal running Claude Code."
+  (interactive)
+  (my/vterm-run "claude --dangerously-skip-permissions"))
+
+(defun my/term-btop ()
+  "Open a terminal running btop."
+  (interactive)
+  (my/vterm-run "btop"))
+
+;; Project switch action: completing-read between common entry points.
 (defun my/project-switch-action (&optional project-root)
-  (pcase (completing-read "Open: " '("find-file" "vterm" "magit" "dired") nil t)
+  (pcase (completing-read
+          "Open: "
+          '("find-file" "vterm" "claude" "btop" "magit" "dired") nil t)
     ("find-file" (doom-project-find-file project-root))
     ("vterm"     (let ((default-directory (or project-root default-directory)))
                    (+vterm/here nil)))
-    ("magit" (magit-status-setup-buffer project-root))
-    ("dired" (dired project-root))))
+    ("claude"    (let ((default-directory (or project-root default-directory)))
+                   (my/term-claude)))
+    ("btop"      (let ((default-directory (or project-root default-directory)))
+                   (my/term-btop)))
+    ("magit"     (magit-status-setup-buffer project-root))
+    ("dired"     (dired project-root))))
 
 (after! projectile
   (projectile-cleanup-known-projects)
@@ -897,8 +920,10 @@ Modification of +popup/toggle"
   (remove-hook 'org-mode-hook #'org-modern-mode))
 
 (map! :leader
-      :desc "Make" "o m" #'+make/run 
-      :desc "Make last" "o M" #'+make/run-last)
+      :desc "Make"       "o m" #'+make/run
+      :desc "Make last"  "o M" #'+make/run-last
+      :desc "Claude"     "o c" #'my/term-claude
+      :desc "btop"       "o B" #'my/term-btop)
 
 (after! corfu
   (setq corfu-cycle t
