@@ -8,13 +8,14 @@
 (package! iflipb)
 (package! drag-stuff)
 (package! glab)
-;; `gtea' is no longer resolvable via straight's recipe repositories —
-;; disabled on the ghostel-migration branch to unblock `doom sync'.
-;; Also affects master; address there separately (either `:recipe' with an
-;; explicit Git URL or drop the package).
+;; `gtea' and `buck' are no longer resolvable via straight's recipe
+;; repositories (both disappeared from upstream since the last successful
+;; sync — magit-forge-family fallout). Disabled here to unblock
+;; `doom sync'. Also affects master; fix there separately with either
+;; explicit `:recipe' URLs or by dropping the packages.
 (package! gtea :disable t)
 (package! gogs)
-(package! buck)
+(package! buck :disable t)
 
 (package! logview)                      ;; mode for logging systems output descovering
 
