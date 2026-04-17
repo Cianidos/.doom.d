@@ -301,14 +301,21 @@ refactor the change across the project."
   :commands (ghostel ghostel-project ghostel-other
              ghostel-compile ghostel-recompile)
   :init
-  ;; Buffer-name template used by ghostel--set-title when OSC 2 fires.
-  ;; We post-process it below to inject the current workspace name.
-  (setq ghostel-buffer-name "*ghostel*"
+  ;; Name without asterisks so `doom-unreal-buffer-p' treats ghostel
+  ;; buffers as real — otherwise iflipb and the workspace buffer list
+  ;; hide them. Short emoji keeps the name compact.
+  (setq ghostel-buffer-name "👻"
         ghostel-max-scrollback (* 5 1024 1024)  ; 5 MB ≈ 5k rows @ 80 cols
         ghostel-shell-integration t
         ghostel-enable-url-detection t
         ghostel-enable-file-detection t
-        ghostel-kill-buffer-on-exit t)
+        ghostel-kill-buffer-on-exit t
+        ;; Default is $SHELL, which on some launches (e.g. process spawned
+        ;; outside a login session) resolves to plain sh. Prefer a real
+        ;; interactive shell.
+        ghostel-shell (or (executable-find "bash")
+                          (getenv "SHELL")
+                          "/bin/sh"))
   :config
   ;; `M-x compile' workalike backed by a real TTY. Programs that probe
   ;; isatty(3) (coloured output, progress bars, curses) behave as they do
@@ -371,27 +378,41 @@ refactor the change across the project."
               (setq-local filter-buffer-substring-function
                           #'my/ghostel-trim-substring)))
 
-  ;; Workspace-aware buffer names. `ghostel--set-title' renames the buffer on
-  ;; every OSC 2 update; re-prefix the name with <workspace> so the
-  ;; persp/iflipb integrations (and the eye) can place it at a glance.
-  (defun my/ghostel-workspace-prefix-buffer-name ()
-    (when (and (derived-mode-p 'ghostel-mode)
-               (bound-and-true-p persp-mode)
-               (modulep! :ui workspaces))
+  ;; Workspace-aware buffer names: "👻<ws> title".
+  ;;
+  ;; Without surrounding asterisks `doom-unreal-buffer-p' treats the buffer
+  ;; as real, so it appears in iflipb and the workspace buffer list.
+  ;;
+  ;; `ghostel--set-title' renames the buffer to "*ghostel: TITLE*" on every
+  ;; OSC 2 update; we rewrite it to our format after the fact (also on
+  ;; mode entry before any title has been set).
+  (defun my/ghostel-rename-buffer ()
+    (when (derived-mode-p 'ghostel-mode)
       (let* ((bn (buffer-name))
-             (wsn (+workspace-current-name))
-             (tag (format "<%s>" wsn)))
-        (unless (string-match-p (regexp-quote tag) bn)
-          (ignore-errors
-            (rename-buffer
-             (if (string-match "\\`\\*ghostel\\(: *\\)?\\(.*?\\)\\*\\'" bn)
-                 (format "*ghostel%s: %s*" tag (match-string 2 bn))
-               (format "*ghostel%s*" tag))
-             t))))))
+             (wsn (and (bound-and-true-p persp-mode)
+                       (modulep! :ui workspaces)
+                       (+workspace-current-name)))
+             (tag (if wsn (format "<%s>" wsn) ""))
+             ;; Title extraction across: *ghostel: TITLE*, *ghostel*,
+             ;; 👻<ws> TITLE (our own format we might be re-processing).
+             (title (cond
+                     ((string-match "\\`\\*ghostel: *\\(.+?\\)\\*\\'" bn)
+                      (match-string 1 bn))
+                     ((string-match "\\`\\*ghostel\\*\\'" bn) "")
+                     ((string-match "\\`👻\\(<[^>]*>\\)? *\\(.*\\)\\'" bn)
+                      (match-string 2 bn))
+                     (t "")))
+             (target (if (and title (> (length title) 0))
+                         (format "👻%s %s" tag title)
+                       (format "👻%s" tag))))
+        (unless (string= bn target)
+          (ignore-errors (rename-buffer target t))
+          (when (boundp 'ghostel--managed-buffer-name)
+            (setq-local ghostel--managed-buffer-name (buffer-name)))))))
 
-  (add-hook 'ghostel-mode-hook #'my/ghostel-workspace-prefix-buffer-name)
+  (add-hook 'ghostel-mode-hook #'my/ghostel-rename-buffer)
   (advice-add 'ghostel--set-title :after
-              (lambda (&rest _) (my/ghostel-workspace-prefix-buffer-name))))
+              (lambda (&rest _) (my/ghostel-rename-buffer))))
 
 ;; Evil integration. evil-ghostel starts in insert-state and snaps point to
 ;; the terminal cursor on state transitions / redraws. Staying in insert-state
