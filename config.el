@@ -314,6 +314,21 @@ refactor the change across the project."
   ;; isatty(3) (coloured output, progress bars, curses) behave as they do
   ;; in a normal shell. Autoloads are registered via `:commands' above.
   (require 'ghostel-compile nil t)
+
+  ;; Route the built-in `compile' / `recompile' entry points through
+  ;; ghostel-compile globally. Every caller — `M-x compile', SPC c c,
+  ;; `+make/run', third-party packages that call `(compile ...)' — gets a
+  ;; real TTY under the hood. The advice returns the ghostel-compile
+  ;; buffer so callers that chain on the return value keep working.
+  (defadvice! my/compile-via-ghostel-a (command &rest _)
+    :override #'compile
+    (ghostel-compile command)
+    (get-buffer ghostel-compile-buffer-name))
+
+  (defadvice! my/recompile-via-ghostel-a (&optional edit-command)
+    :override #'recompile
+    (ghostel-recompile edit-command)
+    (get-buffer ghostel-compile-buffer-name))
   ;; Keys that should reach Emacs instead of the terminal.
   ;; Defaults: C-c C-x C-u C-h C-g M-x M-o M-:
   (dolist (k '("M-[" "M-]"
