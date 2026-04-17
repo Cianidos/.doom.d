@@ -373,12 +373,29 @@ refactor the change across the project."
   (advice-add 'ghostel--set-title :after
               (lambda (&rest _) (my/ghostel-workspace-prefix-buffer-name))))
 
-;; Evil integration: insert state by default, ESC → normal, alt-screen
-;; programs (vim/less/htop) receive ESC unmodified. Configured as a soft
-;; dependency so ghostel still works if evil-ghostel fails to load.
+;; Evil integration. evil-ghostel starts in insert-state and snaps point to
+;; the terminal cursor on state transitions / redraws. Staying in insert-state
+;; is what keeps the Emacs point following the TUI cursor (htop, Claude Code,
+;; readline apps). `emacs-state' bypasses those sync hooks, so the cursor
+;; gets stuck where you entered the state.
+;;
+;; Default evil-ghostel insert-state lets ESC exit to normal-state — which
+;; means TUI apps never see ESC. Rebind below so ESC is sent to the
+;; terminal, and move the "enter normal state" trigger to `C-c <escape>'
+;; (a deliberate chord you rarely need; use it when you want to scroll,
+;; search, or yank a region without leaving the shell).
 (use-package! evil-ghostel
   :after (ghostel evil)
-  :hook (ghostel-mode . evil-ghostel-mode))
+  :hook (ghostel-mode . evil-ghostel-mode)
+  :config
+  (evil-define-key 'insert evil-ghostel-mode-map
+    ;; ESC → terminal (for vim, readline vi-mode, Claude Code, etc.)
+    (kbd "<escape>")
+    (lambda () (interactive)
+      (when (process-live-p ghostel--process)
+        (process-send-string ghostel--process "\e")))
+    ;; Deliberate chord to enter evil normal-state for scroll/search/yank.
+    (kbd "C-c <escape>") #'evil-normal-state))
 
 (use-package! iflipb
   :config
