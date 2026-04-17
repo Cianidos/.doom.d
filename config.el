@@ -298,7 +298,8 @@ refactor the change across the project."
 ;;   For line-editing TUIs that also need a real ESC (readline vi-mode
 ;;   etc.), use `C-c C-q' then ESC to send it literally.
 (use-package! ghostel
-  :commands (ghostel ghostel-project ghostel-other)
+  :commands (ghostel ghostel-project ghostel-other
+             ghostel-compile ghostel-recompile)
   :init
   ;; Buffer-name template used by ghostel--set-title when OSC 2 fires.
   ;; We post-process it below to inject the current workspace name.
@@ -309,6 +310,10 @@ refactor the change across the project."
         ghostel-enable-file-detection t
         ghostel-kill-buffer-on-exit t)
   :config
+  ;; `M-x compile' workalike backed by a real TTY. Programs that probe
+  ;; isatty(3) (coloured output, progress bars, curses) behave as they do
+  ;; in a normal shell. Autoloads are registered via `:commands' above.
+  (require 'ghostel-compile nil t)
   ;; Keys that should reach Emacs instead of the terminal.
   ;; Defaults: C-c C-x C-u C-h C-g M-x M-o M-:
   (dolist (k '("M-[" "M-]"
@@ -938,8 +943,15 @@ Modification of +popup/toggle"
   (remove-hook 'org-mode-hook #'org-modern-mode))
 
 (map! :leader
-      :desc "Make" "o m" #'+make/run 
-      :desc "Make last" "o M" #'+make/run-last)
+      :desc "Make"       "o m" #'+make/run
+      :desc "Make last"  "o M" #'+make/run-last
+      ;; Ghostel terminal (replaces Doom's :term vterm `SPC o t / T' bindings).
+      :desc "Shell here"      "o t" #'ghostel
+      :desc "Shell at project" "o T" #'ghostel-project
+      ;; Ghostel-backed compile with real TTY (coloured output, progress bars,
+      ;; curses tools behave as in a normal shell).
+      :desc "Compile (TTY)"   "o c" #'ghostel-compile
+      :desc "Recompile (TTY)" "o C" #'ghostel-recompile)
 
 (after! corfu
   (setq corfu-cycle t
