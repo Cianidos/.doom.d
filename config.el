@@ -492,14 +492,20 @@ refactor the change across the project."
 (after! telega
   (setq telega-root-buffer-name "Telega"))
 
-;; Project switch action: completing-read between find-file, shell, magit, dired.
+;; Project switch action: completing-read between common entry points.
 (defun my/project-switch-action (&optional project-root)
-  (pcase (completing-read "Open: " '("find-file" "shell" "magit" "dired") nil t)
+  (pcase (completing-read
+          "Open: "
+          '("find-file" "shell" "claude" "btop" "magit" "dired") nil t)
     ("find-file" (doom-project-find-file project-root))
     ("shell"     (let ((default-directory (or project-root default-directory)))
                    (ghostel)))
-    ("magit" (magit-status-setup-buffer project-root))
-    ("dired" (dired project-root))))
+    ("claude"    (let ((default-directory (or project-root default-directory)))
+                   (my/term-claude)))
+    ("btop"      (let ((default-directory (or project-root default-directory)))
+                   (my/term-btop)))
+    ("magit"     (magit-status-setup-buffer project-root))
+    ("dired"     (dired project-root))))
 
 (after! projectile
   (projectile-cleanup-known-projects)
@@ -978,16 +984,33 @@ Modification of +popup/toggle"
   (global-org-modern-mode -1)
   (remove-hook 'org-mode-hook #'org-modern-mode))
 
+;; Shell-command wrappers: open a fresh ghostel and run CMD in it.
+;; Shell reads its stdin as soon as it's ready, so sending immediately
+;; after `(ghostel)' returns is safe in practice.
+(defun my/ghostel-run (cmd)
+  "Open a new ghostel buffer and run CMD."
+  (ghostel)
+  (when (process-live-p ghostel--process)
+    (process-send-string ghostel--process (concat cmd "\r"))))
+
+(defun my/term-claude ()
+  "Open a terminal running Claude Code."
+  (interactive)
+  (my/ghostel-run "claude --dangerously-skip-permissions"))
+
+(defun my/term-btop ()
+  "Open a terminal running btop."
+  (interactive)
+  (my/ghostel-run "btop"))
+
 (map! :leader
-      :desc "Make"       "o m" #'+make/run
-      :desc "Make last"  "o M" #'+make/run-last
+      :desc "Make"             "o m" #'+make/run
+      :desc "Make last"        "o M" #'+make/run-last
       ;; Ghostel terminal (replaces Doom's :term vterm `SPC o t / T' bindings).
-      :desc "Shell here"      "o t" #'ghostel
+      :desc "Shell here"       "o t" #'ghostel
       :desc "Shell at project" "o T" #'ghostel-project
-      ;; Ghostel-backed compile with real TTY (coloured output, progress bars,
-      ;; curses tools behave as in a normal shell).
-      :desc "Compile (TTY)"   "o c" #'ghostel-compile
-      :desc "Recompile (TTY)" "o C" #'ghostel-recompile)
+      :desc "Claude"           "o c" #'my/term-claude
+      :desc "btop"             "o B" #'my/term-btop)
 
 (after! corfu
   (setq corfu-cycle t
