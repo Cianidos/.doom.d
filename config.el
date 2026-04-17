@@ -307,8 +307,12 @@ refactor the change across the project."
         "S-<up>"    #'evil-window-up
         "S-<down>"  #'evil-window-down
 
-        ;; Send shift+return to the terminal instead of letting Emacs handle it
-        "S-<return>" #'vterm--self-insert
+        ;; Shift+Return → backslash + CR. Specifically to give Claude Code's
+        ;; TUI a multi-line-input shortcut on the key you'd expect. Claude
+        ;; reads `\\' + Enter as line-continuation; neither S-<return> nor
+        ;; M-<return> work because vterm has no keyboard protocol to pass
+        ;; modifiers, and Claude's input layer doesn't honor ESC+CR.
+        "S-<return>" (cmd! (vterm-send-string "\\\r"))
 
         ;; Copy-mode: buffer becomes read-only, evil normal state activates,
         ;; you get vim motions, / search, y yank, etc.
@@ -325,6 +329,22 @@ refactor the change across the project."
               (if vterm-copy-mode
                   (evil-normal-state)
                 (evil-emacs-state))))
+
+  ;; Strip trailing whitespace from every line when yanking text out of
+  ;; vterm-copy-mode. vterm pads lines to terminal width with spaces, which
+  ;; TUIs like Claude Code exaggerate. Hooking `filter-buffer-substring-function'
+  ;; catches every standard extraction path (kill-ring-save, evil yank,
+  ;; copy-region-as-kill).
+  (defun my/vterm-copy-trim-substring (beg end &optional delete)
+    (let ((text (buffer-substring beg end)))
+      (when delete (delete-region beg end))
+      (replace-regexp-in-string "[ \t]+$" "" text)))
+
+  (add-hook 'vterm-copy-mode-hook
+            (defun my/vterm-copy-install-trim-h ()
+              (when vterm-copy-mode
+                (setq-local filter-buffer-substring-function
+                            #'my/vterm-copy-trim-substring))))
 
   ;; Pin vterm buffer names to the workspace where they were created.
   ;; Sets vterm-buffer-name-string buffer-locally so every shell title update
@@ -372,6 +392,14 @@ refactor the change across the project."
 
   (setf iflipb-wrap-around t)
 
+  ;; Replace default regex "^[*]" with Doom's unreal-buffer test so that
+  ;; help/compilation/process/popup buffers stay out of cycling even if
+  ;; they're members of the current workspace.
+  (defun my/iflipb-ignore-buffer-p (name)
+    (let ((buf (get-buffer name)))
+      (and buf (doom-unreal-buffer-p buf))))
+  (setf iflipb-ignore-buffers #'my/iflipb-ignore-buffer-p)
+
   (map! "M-]" 'iflipb-next-buffer
         "M-[" 'iflipb-previous-buffer)
   )
@@ -395,6 +423,19 @@ refactor the change across the project."
   (projectile-cleanup-known-projects)
   (setq +workspaces-switch-project-function #'my/project-switch-action))
 
+;; FUTURE: consider migrating off persp-mode to `tab-bar-mode' + `bufferlo'.
+;; persp-mode keeps membership in two parallel data structures (`persp-buffers'
+;; slot on each persp AND `persp--buffer-in-persps' set on each buffer) with
+;; independent write guards — every customization has to patch both sides or
+;; they drift. tab-bar-mode is a single-source-of-truth window-config store;
+;; bufferlo adds per-frame/tab buffer isolation in one clean data structure.
+;; Minimal recipe:
+;;   (setq tab-bar-show nil tab-bar-new-tab-choice 'clone)
+;;   (tab-bar-mode 1)
+;;   (use-package! bufferlo :config (bufferlo-mode 1))
+;; Cost: rewrite +workspaces-switch-project-function, buffer-name advices,
+;; iflipb filter, and disable Doom's :ui workspaces module.
+
 (after! persp-mode
   ;; Prevent unreal buffers (popups, magit internals, etc.) from leaking into workspaces
   (add-hook 'persp-add-buffer-on-after-change-major-mode-filter-functions
@@ -404,20 +445,57 @@ refactor the change across the project."
   ;; Default 'non-empty renames main → project when main has no buffers.
   (setq +workspaces-on-switch-project-behavior t)
 
-  ;; Pin vterm and magit buffers to the workspace where they were created.
-  ;; Once a buffer belongs to a perspective, block it from being auto-added
-  ;; to a different one (this is the main anti-leak mechanism).
-  (defadvice! my/pin-buffer-to-workspace-a (fn buf &rest args)
-    :around #'persp-add-buffer-to-persp
-    (let ((buf (if (bufferp buf) buf (get-buffer buf))))
-      (if (and buf (buffer-live-p buf)
-               (with-current-buffer buf
-                 (derived-mode-p 'vterm-mode 'magit-mode))
-               (let ((dominated (persp--buffer-in-persps buf))
-                     (target (or (car args) (get-current-persp))))
-                 (and dominated (not (memq target dominated)))))
-          nil
-        (apply fn buf args)))))
+  ;; Pin vterm/magit buffers to the workspace they were first added to.
+  ;; File-visiting and other buffers are exempt.
+  ;;
+  ;; Two layers are needed because persp-mode leaks in two ways:
+  ;;
+  ;; (A) Membership: `persp-add-buffer' pushes to two independent data
+  ;;     structures (`persp-buffers' slot + `persp--buffer-in-persps' set).
+  ;;     Advice at the entry blocks both.
+  ;;
+  ;; (B) Display: per-persp window-configurations (saved on switch) and
+  ;;     winner-ring history may reference foreign buffers from older buggy
+  ;;     state. Restoring those configs shows the foreign buffer in a window
+  ;;     without adding it to the perspective. A post-switch sweep replaces
+  ;;     such windows with a fallback buffer.
+  (defun my/persp-pinned-mode-p (buf)
+    "Non-nil if BUF is a vterm/magit buffer that should be workspace-pinned."
+    (and (buffer-live-p buf)
+         (with-current-buffer buf
+           (derived-mode-p 'vterm-mode 'magit-mode))))
+
+  (defun my/persp-pin-p (buf persp)
+    "Non-nil if BUF should be blocked from being added to PERSP."
+    (and (my/persp-pinned-mode-p buf)
+         (let ((dominated (persp--buffer-in-persps buf)))
+           (and dominated (not (memq persp dominated))))))
+
+  ;; Layer A: block cross-workspace membership additions.
+  (defadvice! my/persp-add-buffer-pin-a (fn &rest args)
+    :around #'persp-add-buffer
+    (let* ((bon (car args))
+           (persp (or (nth 1 args) (get-current-persp)))
+           (bufs (if (listp bon) bon (list bon)))
+           (filtered (cl-remove-if
+                      (lambda (b)
+                        (let ((buf (persp-get-buffer-or-null b)))
+                          (and buf (my/persp-pin-p buf persp))))
+                      bufs)))
+      (when filtered
+        (apply fn filtered (cdr args)))))
+
+  ;; Layer B: after switching to a workspace, replace any window displaying
+  ;; a pinned buffer that does not belong to this perspective.
+  (defun my/persp-sweep-foreign-windows (&rest _)
+    (let ((persp (get-current-persp)))
+      (when persp
+        (dolist (win (window-list nil 'no-mini))
+          (let ((buf (window-buffer win)))
+            (when (and (my/persp-pinned-mode-p buf)
+                       (not (memq persp (persp--buffer-in-persps buf))))
+              (switch-to-prev-buffer win 'bury)))))))
+  (add-hook 'persp-activated-functions #'my/persp-sweep-foreign-windows))
 
 
 (use-package! drag-stuff
@@ -950,9 +1028,10 @@ Modification of +popup/toggle"
   :commands telega
   :config
   (setq telega-server-libs-prefix (expand-file-name "~/opt/thirdparty/installation/tdlib"))
-  (setq telega-proxies
-        '((:server "127.0.0.1" :port 10808 :enable t
-           :type (:@type "proxyTypeHttp"))))
+  ;; disabled since there is no proxies any more, vpn over tun used
+  ;; (setq telega-proxies
+  ;;       '((:server "127.0.0.1" :port 10808 :enable t
+  ;;          :type (:@type "proxyTypeHttp"))))
 
   (setq telega-chat-show-reactions t)
   (setq telega-chat-button-width '(0.25 15 30))
