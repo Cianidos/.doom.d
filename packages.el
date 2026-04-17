@@ -28,6 +28,19 @@
 
 (package! telega)
 
+;; Ghostel: libghostty-vt based terminal replacement for vterm.
+;; Doom's `:term vterm' module is disabled in init.el; ghostel is installed
+;; directly from GitHub.
+;; Native module is downloaded automatically on first `M-x ghostel'
+;; (`ghostel-module-auto-install' default is `ask'), or build with
+;; `M-x ghostel-module-compile' (requires Zig >= 0.15.2).
+(package! ghostel
+  :recipe (:host github :repo "dakra/ghostel"
+           :files ("*.el" "etc" "include" "src" "build.zig" "build.zig.zon")))
+(package! evil-ghostel
+  :recipe (:host github :repo "dakra/ghostel"
+           :files ("evil-ghostel.el")))
+
 ;; ;; Unpin the built-in eglot (since Emacs 30 ships with it)
 ;; (unpin! eglot)
 ;; ;; Use the eglot-semtok fork instead

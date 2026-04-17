@@ -276,85 +276,109 @@ refactor the change across the project."
 (map! :n "M-p" nil
       :n :desc "Toggle Go Exported Symbol" "M-p" #'my/go-toggle-exported)
 
-(use-package! vterm
+;; ============================================================================
+;; Ghostel — libghostty-vt terminal (vterm replacement)
+;; ============================================================================
+;;
+;; Notes on differences from vterm:
+;;
+;; - Scrollback is a real Emacs text buffer, so isearch / consult-line /
+;;   occur work over the full history without entering copy-mode.
+;;   The old "copy-mode dance" is mostly obsolete; `M-w' over a region in
+;;   the live buffer just works.
+;;
+;; - Keymap model is inverted. Most keys are sent to the PTY; only keys
+;;   listed in `ghostel-keymap-exceptions' reach Emacs. We add our Meta-
+;;   numeric, M-[/M-], and S-<arrow> keys to the exception list below.
+;;
+;; - Evil integration is via `evil-ghostel'. The terminal starts in
+;;   insert-state and pressing ESC enters normal-state. For alt-screen
+;;   programs (vim/less/htop) ESC is passed through to the app untouched,
+;;   so the old `emacs-state' workaround is no longer needed for them.
+;;   For line-editing TUIs that also need a real ESC (readline vi-mode
+;;   etc.), use `C-c C-q' then ESC to send it literally.
+(use-package! ghostel
+  :commands (ghostel ghostel-project ghostel-other)
+  :init
+  ;; Buffer-name template used by ghostel--set-title when OSC 2 fires.
+  ;; We post-process it below to inject the current workspace name.
+  (setq ghostel-buffer-name "*ghostel*"
+        ghostel-max-scrollback (* 5 1024 1024)  ; 5 MB ≈ 5k rows @ 80 cols
+        ghostel-shell-integration t
+        ghostel-enable-url-detection t
+        ghostel-enable-file-detection t
+        ghostel-kill-buffer-on-exit t)
   :config
-  ;; Use emacs state so all keys pass through to the terminal naturally.
-  ;; ESC reaches the shell. C-g still works as Emacs abort.
-  (evil-set-initial-state 'vterm-mode 'emacs)
+  ;; Keys that should reach Emacs instead of the terminal.
+  ;; Defaults: C-c C-x C-u C-h C-g M-x M-o M-:
+  (dolist (k '("M-[" "M-]"
+               "M-0" "M-1" "M-2" "M-3" "M-4"
+               "M-5" "M-6" "M-7" "M-8" "M-9"
+               "S-<left>" "S-<right>" "S-<up>" "S-<down>"
+               "s-<left>" "s-<right>" "s-<up>" "s-<down>"))
+    (add-to-list 'ghostel-keymap-exceptions k))
 
-  (setq vterm-max-scrollback 10000
-        vterm-copy-mode-remove-fake-newlines nil
-        ;; Buffer names track the shell title (set by vterm_prompt_end in bash)
-        vterm-buffer-name-string "vterm %s")
-
-  ;; Register commands callable from shell via vterm_cmd
+  ;; OSC 51 shell → elisp dispatch (same protocol as vterm_cmd).
   (dolist (cmd '(("find-file"              find-file)
                  ("find-file-other-window" find-file-other-window)
                  ("magit-status"           magit-status)
                  ("dired"                  dired)
-                 ("message"               message)))
-    (add-to-list 'vterm-eval-cmds cmd))
+                 ("message"                message)))
+    (add-to-list 'ghostel-eval-cmds cmd))
 
-  (map! :map vterm-mode-map
-        ;; Unset number/bracket keys that were being swallowed by Doom/iflipb
-        "M-]" nil "M-[" nil
-        "M-1" nil "M-2" nil "M-3" nil "M-4" nil "M-5" nil
-        "M-6" nil "M-7" nil "M-8" nil "M-9" nil "M-0" nil
+  (map! :map ghostel-mode-map
+        ;; Shift+Return → backslash + CR. Specifically for Claude Code's TUI:
+        ;; it accepts `\' + Enter as line-continuation. Neither raw S-<return>
+        ;; nor M-<return> worked through vterm; ghostel speaks the Kitty
+        ;; keyboard protocol so S-<return> may actually be distinguishable
+        ;; to Claude eventually, but for today's build the literal
+        ;; backslash+CR is the reliable path.
+        "S-<return>" (cmd!
+                      (when (process-live-p ghostel--process)
+                        (process-send-string ghostel--process "\\\r"))))
 
-        ;; Window navigation (must be explicit since we're in emacs state)
-        "S-<left>"  #'evil-window-left
-        "S-<right>" #'evil-window-right
-        "S-<up>"    #'evil-window-up
-        "S-<down>"  #'evil-window-down
-
-        ;; Shift+Return → backslash + CR. Specifically to give Claude Code's
-        ;; TUI a multi-line-input shortcut on the key you'd expect. Claude
-        ;; reads `\\' + Enter as line-continuation; neither S-<return> nor
-        ;; M-<return> work because vterm has no keyboard protocol to pass
-        ;; modifiers, and Claude's input layer doesn't honor ESC+CR.
-        "S-<return>" (cmd! (vterm-send-string "\\\r"))
-
-        ;; Copy-mode: buffer becomes read-only, evil normal state activates,
-        ;; you get vim motions, / search, y yank, etc.
-        "C-c C-t" #'vterm-copy-mode
-        "C-c C-z" (lambda () (interactive) (vterm-send "C-z"))
-        )
-
-  (map! :map vterm-copy-mode-map
-        :n "q" #'vterm-copy-mode
-        :n "i" #'vterm-copy-mode)
-
-  (add-hook 'vterm-copy-mode-hook
-            (lambda ()
-              (if vterm-copy-mode
-                  (evil-normal-state)
-                (evil-emacs-state))))
-
-  ;; Strip trailing whitespace from every line when yanking text out of
-  ;; vterm-copy-mode. vterm pads lines to terminal width with spaces, which
-  ;; TUIs like Claude Code exaggerate. Hooking `filter-buffer-substring-function'
-  ;; catches every standard extraction path (kill-ring-save, evil yank,
-  ;; copy-region-as-kill).
-  (defun my/vterm-copy-trim-substring (beg end &optional delete)
+  ;; Strip trailing whitespace per line when copying out of a ghostel buffer.
+  ;; TUI apps pad lines with spaces to terminal width; filter-buffer-substring
+  ;; is the canonical extraction hook so this catches kill-ring-save, evil
+  ;; yank, copy-region-as-kill.
+  (defun my/ghostel-trim-substring (beg end &optional delete)
     (let ((text (buffer-substring beg end)))
       (when delete (delete-region beg end))
       (replace-regexp-in-string "[ \t]+$" "" text)))
 
-  (add-hook 'vterm-copy-mode-hook
-            (defun my/vterm-copy-install-trim-h ()
-              (when vterm-copy-mode
-                (setq-local filter-buffer-substring-function
-                            #'my/vterm-copy-trim-substring))))
+  (add-hook 'ghostel-mode-hook
+            (defun my/ghostel-install-trim-h ()
+              (setq-local filter-buffer-substring-function
+                          #'my/ghostel-trim-substring)))
 
-  ;; Pin vterm buffer names to the workspace where they were created.
-  ;; Sets vterm-buffer-name-string buffer-locally so every shell title update
-  ;; (OSC rename) keeps the workspace prefix — not just the initial name.
-  (add-hook 'vterm-mode-hook
-            (lambda ()
-              (when (and (bound-and-true-p persp-mode)
-                         (modulep! :ui workspaces))
-                (setq-local vterm-buffer-name-string
-                            (format "vterm<%s> %%s" (+workspace-current-name)))))))
+  ;; Workspace-aware buffer names. `ghostel--set-title' renames the buffer on
+  ;; every OSC 2 update; re-prefix the name with <workspace> so the
+  ;; persp/iflipb integrations (and the eye) can place it at a glance.
+  (defun my/ghostel-workspace-prefix-buffer-name ()
+    (when (and (derived-mode-p 'ghostel-mode)
+               (bound-and-true-p persp-mode)
+               (modulep! :ui workspaces))
+      (let* ((bn (buffer-name))
+             (wsn (+workspace-current-name))
+             (tag (format "<%s>" wsn)))
+        (unless (string-match-p (regexp-quote tag) bn)
+          (ignore-errors
+            (rename-buffer
+             (if (string-match "\\`\\*ghostel\\(: *\\)?\\(.*?\\)\\*\\'" bn)
+                 (format "*ghostel%s: %s*" tag (match-string 2 bn))
+               (format "*ghostel%s*" tag))
+             t))))))
+
+  (add-hook 'ghostel-mode-hook #'my/ghostel-workspace-prefix-buffer-name)
+  (advice-add 'ghostel--set-title :after
+              (lambda (&rest _) (my/ghostel-workspace-prefix-buffer-name))))
+
+;; Evil integration: insert state by default, ESC → normal, alt-screen
+;; programs (vim/less/htop) receive ESC unmodified. Configured as a soft
+;; dependency so ghostel still works if evil-ghostel fails to load.
+(use-package! evil-ghostel
+  :after (ghostel evil)
+  :hook (ghostel-mode . evil-ghostel-mode))
 
 (use-package! iflipb
   :config
@@ -410,12 +434,12 @@ refactor the change across the project."
 (after! telega
   (setq telega-root-buffer-name "Telega"))
 
-;; Project switch action: completing-read between find-file and vterm.
+;; Project switch action: completing-read between find-file, shell, magit, dired.
 (defun my/project-switch-action (&optional project-root)
-  (pcase (completing-read "Open: " '("find-file" "vterm" "magit" "dired") nil t)
+  (pcase (completing-read "Open: " '("find-file" "shell" "magit" "dired") nil t)
     ("find-file" (doom-project-find-file project-root))
-    ("vterm"     (let ((default-directory (or project-root default-directory)))
-                   (+vterm/here nil)))
+    ("shell"     (let ((default-directory (or project-root default-directory)))
+                   (ghostel)))
     ("magit" (magit-status-setup-buffer project-root))
     ("dired" (dired project-root))))
 
@@ -445,7 +469,7 @@ refactor the change across the project."
   ;; Default 'non-empty renames main → project when main has no buffers.
   (setq +workspaces-on-switch-project-behavior t)
 
-  ;; Pin vterm/magit buffers to the workspace they were first added to.
+  ;; Pin ghostel/magit buffers to the workspace they were first added to.
   ;; File-visiting and other buffers are exempt.
   ;;
   ;; Two layers are needed because persp-mode leaks in two ways:
@@ -460,10 +484,10 @@ refactor the change across the project."
   ;;     without adding it to the perspective. A post-switch sweep replaces
   ;;     such windows with a fallback buffer.
   (defun my/persp-pinned-mode-p (buf)
-    "Non-nil if BUF is a vterm/magit buffer that should be workspace-pinned."
+    "Non-nil if BUF is a ghostel/magit buffer that should be workspace-pinned."
     (and (buffer-live-p buf)
          (with-current-buffer buf
-           (derived-mode-p 'vterm-mode 'magit-mode))))
+           (derived-mode-p 'ghostel-mode 'magit-mode))))
 
   (defun my/persp-pin-p (buf persp)
     "Non-nil if BUF should be blocked from being added to PERSP."
