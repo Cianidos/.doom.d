@@ -317,6 +317,12 @@ refactor the change across the project."
                           (getenv "SHELL")
                           "/bin/sh"))
   :config
+  ;; Ghostel's colour faces (`ghostel-color-*') inherit from `term-color-*',
+  ;; which are only defined once `term.el' has been loaded. Without this
+  ;; require, the inherit chain is broken on a fresh Emacs and everything
+  ;; renders monochrome.
+  (require 'term)
+
   ;; `M-x compile' workalike backed by a real TTY. Programs that probe
   ;; isatty(3) (coloured output, progress bars, curses) behave as they do
   ;; in a normal shell. Autoloads are registered via `:commands' above.
@@ -374,7 +380,14 @@ refactor the change across the project."
       (replace-regexp-in-string "[ \t]+$" "" text)))
 
   (add-hook 'ghostel-mode-hook
-            (defun my/ghostel-install-trim-h ()
+            (defun my/ghostel-install-buffer-locals-h ()
+              ;; Force Doom to treat the buffer as "real" so it participates
+              ;; in persp/workspaces, iflipb cycling, and `SPC ,' switcher.
+              ;; Despite deriving from `fundamental-mode', something in Doom
+              ;; (popup filters, unreal heuristics) still classifies ghostel
+              ;; buffers as non-real without this explicit marker.
+              (setq-local doom-real-buffer-p t)
+              ;; Trim trailing whitespace when copying text out of the buffer.
               (setq-local filter-buffer-substring-function
                           #'my/ghostel-trim-substring)))
 
