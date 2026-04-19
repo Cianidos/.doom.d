@@ -317,11 +317,43 @@ refactor the change across the project."
                           (getenv "SHELL")
                           "/bin/sh"))
   :config
-  ;; Ghostel's colour faces (`ghostel-color-*') inherit from `term-color-*',
-  ;; which are only defined once `term.el' has been loaded. Without this
-  ;; require, the inherit chain is broken on a fresh Emacs and everything
-  ;; renders monochrome.
-  (require 'term)
+  ;; Ghostel's native module writes inline `face' text-properties with
+  ;; :foreground / :background per cell.  `font-lock-mode', when enabled,
+  ;; has JIT-lock call `font-lock-unfontify-region' on every redraw — which
+  ;; strips those face props, rendering the terminal grid in the buffer's
+  ;; default fg only.  Doom forces `font-lock-defaults' to `(nil t)'
+  ;; globally, which makes `font-lock-mode' enable even in buffers whose
+  ;; major modes (like ghostel-mode) have no keywords to fontify.
+  ;;
+  ;; Defense in depth:
+  ;;   1. Exclude `ghostel-mode' from `font-lock-global-modes' so the
+  ;;      `global-font-lock-mode-enable-in-buffer' hook skips it outright.
+  ;;   2. Neutralise the unfontify pass via a buffer-local override — even
+  ;;      if `font-lock-mode' ends up on via some other path, the face
+  ;;      props survive.  This is the targeted upstream-worthy fix; (1)
+  ;;      is belt-and-braces for user configs that force font-lock on
+  ;;      differently.
+  (setq font-lock-global-modes
+        (pcase font-lock-global-modes
+          ('t '(not ghostel-mode))
+          (`(not . ,modes) (cons 'not (cl-adjoin 'ghostel-mode modes)))
+          (modes (cons 'not (list 'ghostel-mode)))))
+  (defun my/ghostel-neutralize-unfontify-h ()
+    "Prevent font-lock from stripping ghostel's per-cell face props."
+    (setq-local font-lock-unfontify-region-function #'ignore))
+  (add-hook 'ghostel-mode-hook #'my/ghostel-neutralize-unfontify-h)
+
+  ;; Doom's indent-guides module enables `indent-bars-mode' for any
+  ;; non-`fundamental-mode' buffer unless a predicate in
+  ;; `+indent-guides-inhibit-functions' vetoes.  Register the veto
+  ;; unconditionally — wrapping this in `with-eval-after-load 'indent-bars'
+  ;; races the very first ghostel buffer, because that buffer is what
+  ;; triggers indent-bars to load in the first place.
+  (defun my/indent-guides-inhibit-in-ghostel-p ()
+    (derived-mode-p 'ghostel-mode))
+  (when (boundp '+indent-guides-inhibit-functions)
+    (add-hook '+indent-guides-inhibit-functions
+              #'my/indent-guides-inhibit-in-ghostel-p))
 
   ;; `M-x compile' workalike backed by a real TTY. Programs that probe
   ;; isatty(3) (coloured output, progress bars, curses) behave as they do
@@ -360,15 +392,15 @@ refactor the change across the project."
     (add-to-list 'ghostel-eval-cmds cmd))
 
   (map! :map ghostel-mode-map
-        ;; Shift+Return → backslash + CR. Specifically for Claude Code's TUI:
-        ;; it accepts `\' + Enter as line-continuation. Neither raw S-<return>
-        ;; nor M-<return> worked through vterm; ghostel speaks the Kitty
-        ;; keyboard protocol so S-<return> may actually be distinguishable
-        ;; to Claude eventually, but for today's build the literal
-        ;; backslash+CR is the reliable path.
-        "S-<return>" (cmd!
-                      (when (process-live-p ghostel--process)
-                        (process-send-string ghostel--process "\\\r"))))
+        ;; Clipboard media keys.  Without explicit bindings they fall
+        ;; through to the global map: `yank' inserts into the Emacs
+        ;; buffer (overpainted by the next redraw), `kill-region'
+        ;; deletes visible text (same overpaint problem).  Route paste
+        ;; through the PTY and degenerate cut to copy — live terminal
+        ;; output can't really be "cut", matching native ghostty.
+        "<XF86Paste>" #'ghostel-yank
+        "<XF86Copy>"  #'kill-ring-save
+        "<XF86Cut>"   #'kill-ring-save)
 
   ;; Strip trailing whitespace per line when copying out of a ghostel buffer.
   ;; TUI apps pad lines with spaces to terminal width; filter-buffer-substring
@@ -427,29 +459,68 @@ refactor the change across the project."
   (advice-add 'ghostel--set-title :after
               (lambda (&rest _) (my/ghostel-rename-buffer))))
 
-;; Evil integration. evil-ghostel starts in insert-state and snaps point to
-;; the terminal cursor on state transitions / redraws. Staying in insert-state
-;; is what keeps the Emacs point following the TUI cursor (htop, Claude Code,
-;; readline apps). `emacs-state' bypasses those sync hooks, so the cursor
-;; gets stuck where you entered the state.
-;;
-;; Default evil-ghostel insert-state lets ESC exit to normal-state — which
-;; means TUI apps never see ESC. Rebind below so ESC is sent to the
-;; terminal, and move the "enter normal state" trigger to `C-c <escape>'
-;; (a deliberate chord you rarely need; use it when you want to scroll,
-;; search, or yank a region without leaving the shell).
+;; Evil integration. Mirror vterm: default to `emacs-state' so every key —
+;; including ESC — passes straight through to the terminal. Users who want
+;; vim-style scroll/search/yank enter `insert-state' explicitly (e.g. `C-z'
+;; via Doom's escape-to-emacs-state toggle, or `evil-insert-state'); from
+;; there ESC exits to `normal-state' per stock evil bindings. The redraw
+;; advice below keeps point synced in emacs-state the same way insert-state
+;; already is, so TUI cursor tracking works in the default state too.
 (use-package! evil-ghostel
   :after (ghostel evil)
   :hook (ghostel-mode . evil-ghostel-mode)
   :config
-  (evil-define-key 'insert evil-ghostel-mode-map
-    ;; ESC → terminal (for vim, readline vi-mode, Claude Code, etc.)
-    (kbd "<escape>")
-    (lambda () (interactive)
-      (when (process-live-p ghostel--process)
-        (process-send-string ghostel--process "\e")))
-    ;; Deliberate chord to enter evil normal-state for scroll/search/yank.
-    (kbd "C-c <escape>") #'evil-normal-state))
+  (evil-set-initial-state 'ghostel-mode 'emacs)
+
+  ;; Upstream bug: `evil-ghostel--reset-cursor-point' interprets the row
+  ;; from `ghostel--cursor-position' as an offset from `point-min', but the
+  ;; native module returns it relative to the terminal VIEWPORT (the last
+  ;; `ghostel--term-rows' lines of the buffer).  With any non-trivial
+  ;; scrollback, entering evil-normal state snaps point to row N of the
+  ;; scrollback instead of row N of the visible screen — so point appears
+  ;; to "teleport to the top-left".  Anchor the translation to
+  ;; `ghostel--viewport-start' instead.
+  ;; Match the native module's cursor placement (src/render.zig near
+  ;; `gotoCharN(viewport_start_int); forwardLine(cy)`), where
+  ;; `viewport_start_int = point-min + forward-line N` and
+  ;; N = (lines in buffer) - rows.  This treats the phantom line at
+  ;; `point-max' after a trailing \n as the last viewport row, which is
+  ;; exactly where the module places the cursor when cy = rows-1.
+  (defun my/evil-ghostel-reset-cursor-point-a (orig-fn &rest args)
+    (if (and (derived-mode-p 'ghostel-mode) ghostel--term)
+        (let* ((pos (ghostel--cursor-position ghostel--term))
+               (tr  (or ghostel--term-rows 0)))
+          (when (and pos (> tr 0))
+            (let ((scrollback (max 0 (- (line-number-at-pos (point-max)) tr))))
+              (goto-char (point-min))
+              (forward-line (+ scrollback (cdr pos)))
+              (move-to-column (car pos)))))
+      (apply orig-fn args)))
+  (advice-add 'evil-ghostel--reset-cursor-point :around
+              #'my/evil-ghostel-reset-cursor-point-a)
+
+  ;; Upstream `evil-ghostel--around-redraw' freezes point in every state
+  ;; except `insert', so entering `emacs-state' (e.g. via `C-z') leaves
+  ;; the cursor stuck at wherever it was when the state changed while
+  ;; the TUI keeps redrawing elsewhere.  Emacs-state is the evil-off
+  ;; escape hatch — users expect it to behave like a vanilla terminal,
+  ;; which means point should follow the terminal cursor like insert.
+  (defun my/evil-ghostel-around-redraw-a (orig-fn term &optional full)
+    (if (and (bound-and-true-p evil-ghostel-mode)
+             (not (memq evil-state '(insert emacs)))
+             (not (ghostel--mode-enabled term 1049)))
+        (let ((saved-point (point)))
+          (funcall orig-fn term full)
+          (goto-char (min saved-point (point-max))))
+      (funcall orig-fn term full)))
+  (advice-add 'evil-ghostel--around-redraw :override
+              #'my/evil-ghostel-around-redraw-a)
+  (defun my/evil-ghostel-emacs-state-entry-h ()
+    (when (and (derived-mode-p 'ghostel-mode)
+               (bound-and-true-p evil-ghostel-mode))
+      (evil-ghostel--insert-state-entry)))
+  (add-hook 'evil-emacs-state-entry-hook
+            #'my/evil-ghostel-emacs-state-entry-h))
 
 (use-package! iflipb
   :config
