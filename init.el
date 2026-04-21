@@ -180,7 +180,7 @@
        (zig +lsp +tree-sitter)               ; C, but simpler
 
        :email
-       ;;(mu4e +org +gmail)
+       (mu4e +org +mbsync +gmail)
        ;;notmuch
        ;;(wanderlust +gmail)
 
