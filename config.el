@@ -1137,17 +1137,8 @@ Modification of +popup/toggle"
   :commands telega
   :config
   (setq telega-server-libs-prefix (expand-file-name "~/opt/thirdparty/installation/tdlib"))
-  ;; disabled since there is no proxies any more, vpn over tun used
-  ;; (setq telega-proxies
-  ;;       '((:server "127.0.0.1" :port 10808 :enable t
-  ;;          :type (:@type "proxyTypeHttp"))))
 
   (setq telega-chat-show-reactions t)
   (setq telega-chat-button-width '(0.25 15 30))
   (global-telega-squash-message-mode 1)
-
-  ;; telega--addProxy ignores :enable from the plist (passes nil to enable-p),
-  ;; so proxies get added but disabled. Fix: pass :enable explicitly.
-  (defadvice! my/telega-addProxy-respect-enable-a (fn tl-proxy &optional enable-p callback)
-    :around #'telega--addProxy
-    (funcall fn tl-proxy (or enable-p (plist-get tl-proxy :enable)) callback)))
+  )
