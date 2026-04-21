@@ -276,85 +276,177 @@ refactor the change across the project."
 (map! :n "M-p" nil
       :n :desc "Toggle Go Exported Symbol" "M-p" #'my/go-toggle-exported)
 
-(use-package! vterm
+;; ============================================================================
+;; Ghostel — libghostty-vt terminal (vterm replacement)
+;; ============================================================================
+;;
+;; Notes on differences from vterm:
+;;
+;; - Scrollback is a real Emacs text buffer, so isearch / consult-line /
+;;   occur work over the full history without entering copy-mode.
+;;   The old "copy-mode dance" is mostly obsolete; `M-w' over a region in
+;;   the live buffer just works.
+;;
+;; - Keymap model is inverted. Most keys are sent to the PTY; only keys
+;;   listed in `ghostel-keymap-exceptions' reach Emacs. We add our Meta-
+;;   numeric, M-[/M-], and S-<arrow> keys to the exception list below.
+;;
+;; - Evil integration is via `evil-ghostel'. The terminal starts in
+;;   insert-state and pressing ESC enters normal-state. For alt-screen
+;;   programs (vim/less/htop) ESC is passed through to the app untouched,
+;;   so the old `emacs-state' workaround is no longer needed for them.
+;;   For line-editing TUIs that also need a real ESC (readline vi-mode
+;;   etc.), use `C-c C-q' then ESC to send it literally.
+(use-package! ghostel
+  :commands (ghostel ghostel-project ghostel-other
+             ghostel-compile ghostel-recompile)
+  :init
+  ;; Name without asterisks so `doom-unreal-buffer-p' treats ghostel
+  ;; buffers as real — otherwise iflipb and the workspace buffer list
+  ;; hide them. Short emoji keeps the name compact.
+  (setq ghostel-buffer-name "👻"
+        ghostel-max-scrollback (* 5 1024 1024)  ; 5 MB ≈ 5k rows @ 80 cols
+        ghostel-shell-integration t
+        ghostel-enable-url-detection t
+        ghostel-enable-file-detection t
+        ghostel-kill-buffer-on-exit t
+        ;; Full redraws rewrite the whole viewport atomically instead of
+        ;; patching dirty rows.  Costs a bit more CPU and adds some input
+        ;; latency under load, but avoids the partial-path artifacts with
+        ;; aggressive TUIs (Claude Code, btop).
+        ghostel-full-redraw t
+        ;; Default is $SHELL, which on some launches (e.g. process spawned
+        ;; outside a login session) resolves to plain sh. Prefer a real
+        ;; interactive shell.
+        ghostel-shell (or (executable-find "bash")
+                          (getenv "SHELL")
+                          "/bin/sh"))
   :config
-  ;; Use emacs state so all keys pass through to the terminal naturally.
-  ;; ESC reaches the shell. C-g still works as Emacs abort.
-  (evil-set-initial-state 'vterm-mode 'emacs)
+  ;; Doom's indent-guides module enables `indent-bars-mode' for any
+  ;; non-`fundamental-mode' buffer unless a predicate in
+  ;; `+indent-guides-inhibit-functions' vetoes.  Register the veto
+  ;; unconditionally — wrapping this in `with-eval-after-load 'indent-bars'
+  ;; races the very first ghostel buffer, because that buffer is what
+  ;; triggers indent-bars to load in the first place.
+  (defun my/indent-guides-inhibit-in-ghostel-p ()
+    (derived-mode-p 'ghostel-mode))
+  (when (boundp '+indent-guides-inhibit-functions)
+    (add-hook '+indent-guides-inhibit-functions
+              #'my/indent-guides-inhibit-in-ghostel-p))
 
-  (setq vterm-max-scrollback 10000
-        vterm-copy-mode-remove-fake-newlines nil
-        ;; Buffer names track the shell title (set by vterm_prompt_end in bash)
-        vterm-buffer-name-string "vterm %s")
+  ;; `M-x compile' workalike backed by a real TTY. Programs that probe
+  ;; isatty(3) (coloured output, progress bars, curses) behave as they do
+  ;; in a normal shell. Autoloads are registered via `:commands' above.
+  (require 'ghostel-compile nil t)
 
-  ;; Register commands callable from shell via vterm_cmd
+  ;; Route the built-in `compile' / `recompile' entry points through
+  ;; ghostel-compile globally. Every caller — `M-x compile', SPC c c,
+  ;; `+make/run', third-party packages that call `(compile ...)' — gets a
+  ;; real TTY under the hood. The advice returns the ghostel-compile
+  ;; buffer so callers that chain on the return value keep working.
+  (defadvice! my/compile-via-ghostel-a (command &rest _)
+    :override #'compile
+    (ghostel-compile command)
+    (get-buffer ghostel-compile-buffer-name))
+
+  (defadvice! my/recompile-via-ghostel-a (&optional edit-command)
+    :override #'recompile
+    (ghostel-recompile edit-command)
+    (get-buffer ghostel-compile-buffer-name))
+  ;; Keys that should reach Emacs instead of the terminal.
+  ;; Defaults: C-c C-x C-u C-h C-g M-x M-o M-:
+  (dolist (k '("M-[" "M-]"
+               "M-0" "M-1" "M-2" "M-3" "M-4"
+               "M-5" "M-6" "M-7" "M-8" "M-9"
+               "S-<left>" "S-<right>" "S-<up>" "S-<down>"
+               "s-<left>" "s-<right>" "s-<up>" "s-<down>"))
+    (add-to-list 'ghostel-keymap-exceptions k))
+
+  ;; OSC 51 shell → elisp dispatch (same protocol as vterm_cmd).
   (dolist (cmd '(("find-file"              find-file)
                  ("find-file-other-window" find-file-other-window)
                  ("magit-status"           magit-status)
                  ("dired"                  dired)
-                 ("message"               message)))
-    (add-to-list 'vterm-eval-cmds cmd))
+                 ("message"                message)))
+    (add-to-list 'ghostel-eval-cmds cmd))
 
-  (map! :map vterm-mode-map
-        ;; Unset number/bracket keys that were being swallowed by Doom/iflipb
-        "M-]" nil "M-[" nil
-        "M-1" nil "M-2" nil "M-3" nil "M-4" nil "M-5" nil
-        "M-6" nil "M-7" nil "M-8" nil "M-9" nil "M-0" nil
+  (map! :map ghostel-mode-map
+        ;; Clipboard media keys.  Without explicit bindings they fall
+        ;; through to the global map: `yank' inserts into the Emacs
+        ;; buffer (overpainted by the next redraw), `kill-region'
+        ;; deletes visible text (same overpaint problem).  Route paste
+        ;; through the PTY and degenerate cut to copy — live terminal
+        ;; output can't really be "cut", matching native ghostty.
+        "<XF86Paste>" #'ghostel-yank
+        "<XF86Copy>"  #'kill-ring-save
+        "<XF86Cut>"   #'kill-ring-save)
 
-        ;; Window navigation (must be explicit since we're in emacs state)
-        "S-<left>"  #'evil-window-left
-        "S-<right>" #'evil-window-right
-        "S-<up>"    #'evil-window-up
-        "S-<down>"  #'evil-window-down
-
-        ;; Shift+Return → backslash + CR. Specifically to give Claude Code's
-        ;; TUI a multi-line-input shortcut on the key you'd expect. Claude
-        ;; reads `\\' + Enter as line-continuation; neither S-<return> nor
-        ;; M-<return> work because vterm has no keyboard protocol to pass
-        ;; modifiers, and Claude's input layer doesn't honor ESC+CR.
-        "S-<return>" (cmd! (vterm-send-string "\\\r"))
-
-        ;; Copy-mode: buffer becomes read-only, evil normal state activates,
-        ;; you get vim motions, / search, y yank, etc.
-        "C-c C-t" #'vterm-copy-mode
-        "C-c C-z" (lambda () (interactive) (vterm-send "C-z"))
-        )
-
-  (map! :map vterm-copy-mode-map
-        :n "q" #'vterm-copy-mode
-        :n "i" #'vterm-copy-mode)
-
-  (add-hook 'vterm-copy-mode-hook
-            (lambda ()
-              (if vterm-copy-mode
-                  (evil-normal-state)
-                (evil-emacs-state))))
-
-  ;; Strip trailing whitespace from every line when yanking text out of
-  ;; vterm-copy-mode. vterm pads lines to terminal width with spaces, which
-  ;; TUIs like Claude Code exaggerate. Hooking `filter-buffer-substring-function'
-  ;; catches every standard extraction path (kill-ring-save, evil yank,
-  ;; copy-region-as-kill).
-  (defun my/vterm-copy-trim-substring (beg end &optional delete)
+  ;; Strip trailing whitespace per line when copying out of a ghostel buffer.
+  ;; TUI apps pad lines with spaces to terminal width; filter-buffer-substring
+  ;; is the canonical extraction hook so this catches kill-ring-save, evil
+  ;; yank, copy-region-as-kill.
+  (defun my/ghostel-trim-substring (beg end &optional delete)
     (let ((text (buffer-substring beg end)))
       (when delete (delete-region beg end))
       (replace-regexp-in-string "[ \t]+$" "" text)))
 
-  (add-hook 'vterm-copy-mode-hook
-            (defun my/vterm-copy-install-trim-h ()
-              (when vterm-copy-mode
-                (setq-local filter-buffer-substring-function
-                            #'my/vterm-copy-trim-substring))))
+  (add-hook 'ghostel-mode-hook
+            (defun my/ghostel-install-buffer-locals-h ()
+              ;; Force Doom to treat the buffer as "real" so it participates
+              ;; in persp/workspaces, iflipb cycling, and `SPC ,' switcher.
+              ;; Despite deriving from `fundamental-mode', something in Doom
+              ;; (popup filters, unreal heuristics) still classifies ghostel
+              ;; buffers as non-real without this explicit marker.
+              (setq-local doom-real-buffer-p t)
+              ;; Trim trailing whitespace when copying text out of the buffer.
+              (setq-local filter-buffer-substring-function
+                          #'my/ghostel-trim-substring)))
 
-  ;; Pin vterm buffer names to the workspace where they were created.
-  ;; Sets vterm-buffer-name-string buffer-locally so every shell title update
-  ;; (OSC rename) keeps the workspace prefix — not just the initial name.
-  (add-hook 'vterm-mode-hook
-            (lambda ()
-              (when (and (bound-and-true-p persp-mode)
-                         (modulep! :ui workspaces))
-                (setq-local vterm-buffer-name-string
-                            (format "vterm<%s> %%s" (+workspace-current-name)))))))
+  ;; Workspace-aware buffer names: "👻<ws> title".
+  ;;
+  ;; Without surrounding asterisks `doom-unreal-buffer-p' treats the buffer
+  ;; as real, so it appears in iflipb and the workspace buffer list.
+  ;;
+  ;; `ghostel--set-title' renames the buffer to "*ghostel: TITLE*" on every
+  ;; OSC 2 update; we rewrite it to our format after the fact (also on
+  ;; mode entry before any title has been set).
+  (defun my/ghostel-rename-buffer ()
+    (when (derived-mode-p 'ghostel-mode)
+      (let* ((bn (buffer-name))
+             (wsn (and (bound-and-true-p persp-mode)
+                       (modulep! :ui workspaces)
+                       (+workspace-current-name)))
+             (tag (if wsn (format "<%s>" wsn) ""))
+             ;; Title extraction across: *ghostel: TITLE*, *ghostel*,
+             ;; 👻<ws> TITLE (our own format we might be re-processing).
+             (title (cond
+                     ((string-match "\\`\\*ghostel: *\\(.+?\\)\\*\\'" bn)
+                      (match-string 1 bn))
+                     ((string-match "\\`\\*ghostel\\*\\'" bn) "")
+                     ((string-match "\\`👻\\(<[^>]*>\\)? *\\(.*\\)\\'" bn)
+                      (match-string 2 bn))
+                     (t "")))
+             (target (if (and title (> (length title) 0))
+                         (format "👻%s %s" tag title)
+                       (format "👻%s" tag))))
+        (unless (string= bn target)
+          (ignore-errors (rename-buffer target t))
+          (when (boundp 'ghostel--managed-buffer-name)
+            (setq-local ghostel--managed-buffer-name (buffer-name)))))))
+
+  (add-hook 'ghostel-mode-hook #'my/ghostel-rename-buffer)
+  (advice-add 'ghostel--set-title :after
+              (lambda (&rest _) (my/ghostel-rename-buffer))))
+
+;; Evil integration. Mirror vterm: default to `emacs-state' so every key —
+;; including ESC — passes straight through to the terminal. Users who want
+;; vim-style scroll/search/yank enter `insert-state' explicitly (e.g. `C-z'
+;; via Doom's escape-to-emacs-state toggle, or `evil-insert-state'); from
+;; there ESC exits to `normal-state' per stock evil bindings.
+(use-package! evil-ghostel
+  :after (ghostel evil)
+  :hook (ghostel-mode . evil-ghostel-mode)
+  :custom (evil-ghostel-initial-state 'emacs))
 
 (use-package! iflipb
   :config
@@ -410,31 +502,14 @@ refactor the change across the project."
 (after! telega
   (setq telega-root-buffer-name "Telega"))
 
-;; Shell-command wrappers: open a fresh vterm and run CMD in it.
-(defun my/vterm-run (cmd)
-  "Open a new vterm buffer and run CMD."
-  (+vterm/here nil)
-  (vterm-send-string cmd)
-  (vterm-send-return))
-
-(defun my/term-claude ()
-  "Open a terminal running Claude Code."
-  (interactive)
-  (my/vterm-run "claude --dangerously-skip-permissions"))
-
-(defun my/term-btop ()
-  "Open a terminal running btop."
-  (interactive)
-  (my/vterm-run "btop"))
-
 ;; Project switch action: completing-read between common entry points.
 (defun my/project-switch-action (&optional project-root)
   (pcase (completing-read
           "Open: "
-          '("find-file" "vterm" "claude" "btop" "magit" "dired") nil t)
+          '("find-file" "shell" "claude" "btop" "magit" "dired") nil t)
     ("find-file" (doom-project-find-file project-root))
-    ("vterm"     (let ((default-directory (or project-root default-directory)))
-                   (+vterm/here nil)))
+    ("shell"     (let ((default-directory (or project-root default-directory)))
+                   (ghostel)))
     ("claude"    (let ((default-directory (or project-root default-directory)))
                    (my/term-claude)))
     ("btop"      (let ((default-directory (or project-root default-directory)))
@@ -468,7 +543,7 @@ refactor the change across the project."
   ;; Default 'non-empty renames main → project when main has no buffers.
   (setq +workspaces-on-switch-project-behavior t)
 
-  ;; Pin vterm/magit buffers to the workspace they were first added to.
+  ;; Pin ghostel/magit buffers to the workspace they were first added to.
   ;; File-visiting and other buffers are exempt.
   ;;
   ;; Two layers are needed because persp-mode leaks in two ways:
@@ -483,10 +558,10 @@ refactor the change across the project."
   ;;     without adding it to the perspective. A post-switch sweep replaces
   ;;     such windows with a fallback buffer.
   (defun my/persp-pinned-mode-p (buf)
-    "Non-nil if BUF is a vterm/magit buffer that should be workspace-pinned."
+    "Non-nil if BUF is a ghostel/magit buffer that should be workspace-pinned."
     (and (buffer-live-p buf)
          (with-current-buffer buf
-           (derived-mode-p 'vterm-mode 'magit-mode))))
+           (derived-mode-p 'ghostel-mode 'magit-mode))))
 
   (defun my/persp-pin-p (buf persp)
     "Non-nil if BUF should be blocked from being added to PERSP."
@@ -919,11 +994,33 @@ Modification of +popup/toggle"
   (global-org-modern-mode -1)
   (remove-hook 'org-mode-hook #'org-modern-mode))
 
+;; Shell-command wrappers: open a fresh ghostel and run CMD in it.
+;; Shell reads its stdin as soon as it's ready, so sending immediately
+;; after `(ghostel)' returns is safe in practice.
+(defun my/ghostel-run (cmd)
+  "Open a new ghostel buffer and run CMD."
+  (ghostel)
+  (when (process-live-p ghostel--process)
+    (process-send-string ghostel--process (concat cmd "\r"))))
+
+(defun my/term-claude ()
+  "Open a terminal running Claude Code."
+  (interactive)
+  (my/ghostel-run "claude --dangerously-skip-permissions"))
+
+(defun my/term-btop ()
+  "Open a terminal running btop."
+  (interactive)
+  (my/ghostel-run "btop"))
+
 (map! :leader
-      :desc "Make"       "o m" #'+make/run
-      :desc "Make last"  "o M" #'+make/run-last
-      :desc "Claude"     "o c" #'my/term-claude
-      :desc "btop"       "o B" #'my/term-btop)
+      :desc "Make"             "o m" #'+make/run
+      :desc "Make last"        "o M" #'+make/run-last
+      ;; Ghostel terminal (replaces Doom's :term vterm `SPC o t / T' bindings).
+      :desc "Shell here"       "o t" #'ghostel
+      :desc "Shell at project" "o T" #'ghostel-project
+      :desc "Claude"           "o c" #'my/term-claude
+      :desc "btop"             "o B" #'my/term-btop)
 
 (after! corfu
   (setq corfu-cycle t

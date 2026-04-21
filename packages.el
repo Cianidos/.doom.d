@@ -8,9 +8,14 @@
 (package! iflipb)
 (package! drag-stuff)
 (package! glab)
-(package! gtea)
+;; `gtea' and `buck' are no longer resolvable via straight's recipe
+;; repositories (both disappeared from upstream since the last successful
+;; sync — magit-forge-family fallout). Disabled here to unblock
+;; `doom sync'. Also affects master; fix there separately with either
+;; explicit `:recipe' URLs or by dropping the packages.
+(package! gtea :disable t)
 (package! gogs)
-(package! buck)
+(package! buck :disable t)
 
 (package! logview)                      ;; mode for logging systems output descovering
 
@@ -27,6 +32,20 @@
 (package! eca :recipe (:host github :repo "editor-code-assistant/eca-emacs" :files ("*.el")))
 
 (package! telega)
+
+;; Ghostel: libghostty-vt based terminal replacement for vterm.
+;; Doom's `:term vterm' module is disabled in init.el; ghostel is installed
+;; directly from GitHub.
+;; Native module is downloaded automatically on first `M-x ghostel'
+;; (`ghostel-module-auto-install' default is `ask'), or build with
+;; `M-x ghostel-module-compile' (requires Zig >= 0.15.2).
+(package! ghostel
+  :recipe (:host github :repo "dakra/ghostel"
+           :pre-build ("zig" "build" "-Doptimize=ReleaseFast")
+           :files (:defaults "etc" "terminfo" "ghostel-module.so")))
+(package! evil-ghostel
+  :recipe (:host github :repo "dakra/ghostel"
+           :files ("evil-ghostel.el")))
 
 ;; ;; Unpin the built-in eglot (since Emacs 30 ships with it)
 ;; (unpin! eglot)
