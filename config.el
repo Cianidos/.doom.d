@@ -299,7 +299,7 @@ refactor the change across the project."
 ;;   etc.), use `C-c C-q' then ESC to send it literally.
 (use-package! ghostel
   :commands (ghostel ghostel-project ghostel-other
-             ghostel-compile ghostel-recompile)
+                     ghostel-compile ghostel-recompile)
   :init
   ;; Name without asterisks so `doom-unreal-buffer-p' treats ghostel
   ;; buffers as real — otherwise iflipb and the workspace buffer list
@@ -370,25 +370,16 @@ refactor the change across the project."
                  ("message"                message)))
     (add-to-list 'ghostel-eval-cmds cmd))
 
-  (map! :map ghostel-mode-map
-        ;; Clipboard media keys.  Without explicit bindings they fall
-        ;; through to the global map: `yank' inserts into the Emacs
-        ;; buffer (overpainted by the next redraw), `kill-region'
-        ;; deletes visible text (same overpaint problem).  Route paste
-        ;; through the PTY and degenerate cut to copy — live terminal
-        ;; output can't really be "cut", matching native ghostty.
-        "<XF86Paste>" #'ghostel-yank
-        "<XF86Copy>"  #'kill-ring-save
-        "<XF86Cut>"   #'kill-ring-save)
-
-  ;; Strip trailing whitespace per line when copying out of a ghostel buffer.
-  ;; TUI apps pad lines with spaces to terminal width; filter-buffer-substring
-  ;; is the canonical extraction hook so this catches kill-ring-save, evil
-  ;; yank, copy-region-as-kill.
+  ;; Clean text copied out of a ghostel buffer: drop soft-wrap newlines
+  ;; and strip per-line trailing whitespace (TUI apps pad to terminal
+  ;; width).  `filter-buffer-substring-function' is the canonical
+  ;; extraction hook, so this catches kill-ring-save, evil yank and
+  ;; copy-region-as-kill — not just the explicit `ghostel-copy-mode-copy'
+  ;; command upstream uses `ghostel--clean-copy-text' from.
   (defun my/ghostel-trim-substring (beg end &optional delete)
     (let ((text (buffer-substring beg end)))
       (when delete (delete-region beg end))
-      (replace-regexp-in-string "[ \t]+$" "" text)))
+      (ghostel--clean-copy-text text)))
 
   (add-hook 'ghostel-mode-hook
             (defun my/ghostel-install-buffer-locals-h ()
@@ -402,41 +393,37 @@ refactor the change across the project."
               (setq-local filter-buffer-substring-function
                           #'my/ghostel-trim-substring)))
 
-  ;; Workspace-aware buffer names: "👻<ws> title".
-  ;;
-  ;; Without surrounding asterisks `doom-unreal-buffer-p' treats the buffer
-  ;; as real, so it appears in iflipb and the workspace buffer list.
-  ;;
-  ;; `ghostel--set-title' renames the buffer to "*ghostel: TITLE*" on every
-  ;; OSC 2 update; we rewrite it to our format after the fact (also on
-  ;; mode entry before any title has been set).
-  (defun my/ghostel-rename-buffer ()
-    (when (derived-mode-p 'ghostel-mode)
-      (let* ((bn (buffer-name))
-             (wsn (and (bound-and-true-p persp-mode)
-                       (modulep! :ui workspaces)
-                       (+workspace-current-name)))
-             (tag (if wsn (format "<%s>" wsn) ""))
-             ;; Title extraction across: *ghostel: TITLE*, *ghostel*,
-             ;; 👻<ws> TITLE (our own format we might be re-processing).
-             (title (cond
-                     ((string-match "\\`\\*ghostel: *\\(.+?\\)\\*\\'" bn)
-                      (match-string 1 bn))
-                     ((string-match "\\`\\*ghostel\\*\\'" bn) "")
-                     ((string-match "\\`👻\\(<[^>]*>\\)? *\\(.*\\)\\'" bn)
-                      (match-string 2 bn))
-                     (t "")))
-             (target (if (and title (> (length title) 0))
-                         (format "👻%s %s" tag title)
-                       (format "👻%s" tag))))
-        (unless (string= bn target)
-          (ignore-errors (rename-buffer target t))
-          (when (boundp 'ghostel--managed-buffer-name)
-            (setq-local ghostel--managed-buffer-name (buffer-name)))))))
+  ;; Workspace-aware buffer names: "👻<ws> title".  Without surrounding
+  ;; asterisks `doom-unreal-buffer-p' treats the buffer as real, so it
+  ;; appears in iflipb and the workspace buffer list.
+  (defun my/ghostel-buffer-name (&optional title)
+    "Compose the workspace-aware ghostel buffer name.
+Includes TITLE when non-empty."
+    (let* ((wsn (and (bound-and-true-p persp-mode)
+                     (modulep! :ui workspaces)
+                     (+workspace-current-name)))
+           (tag (if wsn (format "<%s>" wsn) "")))
+      (if (and title (> (length title) 0))
+          (format "👻%s %s" tag title)
+        (format "👻%s" tag))))
 
-  (add-hook 'ghostel-mode-hook #'my/ghostel-rename-buffer)
-  (advice-add 'ghostel--set-title :after
-              (lambda (&rest _) (my/ghostel-rename-buffer))))
+  (defun my/ghostel-rename-from-title (title)
+    "Apply the workspace prefix to TITLE reported via OSC 2.
+Used as `ghostel-set-title-function' so upstream's default rename
+is replaced entirely rather than fought with advice."
+    (let ((target (my/ghostel-buffer-name title)))
+      (unless (string= (buffer-name) target)
+        (ignore-errors (rename-buffer target t)))))
+
+  (defun my/ghostel-rename-on-mode-entry ()
+    "Rename the initial ghostel buffer before any OSC 2 title arrives."
+    (when (derived-mode-p 'ghostel-mode)
+      (let ((target (my/ghostel-buffer-name)))
+        (unless (string= (buffer-name) target)
+          (ignore-errors (rename-buffer target t))))))
+
+  (setq ghostel-set-title-function #'my/ghostel-rename-from-title)
+  (add-hook 'ghostel-mode-hook #'my/ghostel-rename-on-mode-entry))
 
 ;; Evil integration. Mirror vterm: default to `emacs-state' so every key —
 ;; including ESC — passes straight through to the terminal. Users who want
