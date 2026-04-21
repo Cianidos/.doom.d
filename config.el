@@ -486,8 +486,12 @@ is replaced entirely rather than fought with advice."
 (load! "lisp/phony-projects")
 
 ;; Telega root buffer without *...* so iflipb and buffer lists treat it as real.
+;; Telega buffers visit no file, so `doom-non-file-visiting-buffer-p' would
+;; otherwise mark them unreal; register the modes as always-real instead.
 (after! telega
-  (setq telega-root-buffer-name "Telega"))
+  (setq telega-root-buffer-name "Telega")
+  (add-to-list 'doom-real-buffer-modes 'telega-root-mode)
+  (add-to-list 'doom-real-buffer-modes 'telega-chat-mode))
 
 ;; Project switch action: completing-read between common entry points.
 (defun my/project-switch-action (&optional project-root)
