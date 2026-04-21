@@ -310,6 +310,11 @@ refactor the change across the project."
         ghostel-enable-url-detection t
         ghostel-enable-file-detection t
         ghostel-kill-buffer-on-exit t
+        ;; Full redraws rewrite the whole viewport atomically instead of
+        ;; patching dirty rows.  Costs a bit more CPU and adds some input
+        ;; latency under load, but avoids the partial-path artifacts with
+        ;; aggressive TUIs (Claude Code, btop).
+        ghostel-full-redraw t
         ;; Default is $SHELL, which on some launches (e.g. process spawned
         ;; outside a login session) resolves to plain sh. Prefer a real
         ;; interactive shell.
@@ -317,32 +322,6 @@ refactor the change across the project."
                           (getenv "SHELL")
                           "/bin/sh"))
   :config
-  ;; Ghostel's native module writes inline `face' text-properties with
-  ;; :foreground / :background per cell.  `font-lock-mode', when enabled,
-  ;; has JIT-lock call `font-lock-unfontify-region' on every redraw — which
-  ;; strips those face props, rendering the terminal grid in the buffer's
-  ;; default fg only.  Doom forces `font-lock-defaults' to `(nil t)'
-  ;; globally, which makes `font-lock-mode' enable even in buffers whose
-  ;; major modes (like ghostel-mode) have no keywords to fontify.
-  ;;
-  ;; Defense in depth:
-  ;;   1. Exclude `ghostel-mode' from `font-lock-global-modes' so the
-  ;;      `global-font-lock-mode-enable-in-buffer' hook skips it outright.
-  ;;   2. Neutralise the unfontify pass via a buffer-local override — even
-  ;;      if `font-lock-mode' ends up on via some other path, the face
-  ;;      props survive.  This is the targeted upstream-worthy fix; (1)
-  ;;      is belt-and-braces for user configs that force font-lock on
-  ;;      differently.
-  (setq font-lock-global-modes
-        (pcase font-lock-global-modes
-          ('t '(not ghostel-mode))
-          (`(not . ,modes) (cons 'not (cl-adjoin 'ghostel-mode modes)))
-          (modes (cons 'not (list 'ghostel-mode)))))
-  (defun my/ghostel-neutralize-unfontify-h ()
-    "Prevent font-lock from stripping ghostel's per-cell face props."
-    (setq-local font-lock-unfontify-region-function #'ignore))
-  (add-hook 'ghostel-mode-hook #'my/ghostel-neutralize-unfontify-h)
-
   ;; Doom's indent-guides module enables `indent-bars-mode' for any
   ;; non-`fundamental-mode' buffer unless a predicate in
   ;; `+indent-guides-inhibit-functions' vetoes.  Register the veto
@@ -463,64 +442,11 @@ refactor the change across the project."
 ;; including ESC — passes straight through to the terminal. Users who want
 ;; vim-style scroll/search/yank enter `insert-state' explicitly (e.g. `C-z'
 ;; via Doom's escape-to-emacs-state toggle, or `evil-insert-state'); from
-;; there ESC exits to `normal-state' per stock evil bindings. The redraw
-;; advice below keeps point synced in emacs-state the same way insert-state
-;; already is, so TUI cursor tracking works in the default state too.
+;; there ESC exits to `normal-state' per stock evil bindings.
 (use-package! evil-ghostel
   :after (ghostel evil)
   :hook (ghostel-mode . evil-ghostel-mode)
-  :config
-  (evil-set-initial-state 'ghostel-mode 'emacs)
-
-  ;; Upstream bug: `evil-ghostel--reset-cursor-point' interprets the row
-  ;; from `ghostel--cursor-position' as an offset from `point-min', but the
-  ;; native module returns it relative to the terminal VIEWPORT (the last
-  ;; `ghostel--term-rows' lines of the buffer).  With any non-trivial
-  ;; scrollback, entering evil-normal state snaps point to row N of the
-  ;; scrollback instead of row N of the visible screen — so point appears
-  ;; to "teleport to the top-left".  Anchor the translation to
-  ;; `ghostel--viewport-start' instead.
-  ;; Match the native module's cursor placement (src/render.zig near
-  ;; `gotoCharN(viewport_start_int); forwardLine(cy)`), where
-  ;; `viewport_start_int = point-min + forward-line N` and
-  ;; N = (lines in buffer) - rows.  This treats the phantom line at
-  ;; `point-max' after a trailing \n as the last viewport row, which is
-  ;; exactly where the module places the cursor when cy = rows-1.
-  (defun my/evil-ghostel-reset-cursor-point-a (orig-fn &rest args)
-    (if (and (derived-mode-p 'ghostel-mode) ghostel--term)
-        (let* ((pos (ghostel--cursor-position ghostel--term))
-               (tr  (or ghostel--term-rows 0)))
-          (when (and pos (> tr 0))
-            (let ((scrollback (max 0 (- (line-number-at-pos (point-max)) tr))))
-              (goto-char (point-min))
-              (forward-line (+ scrollback (cdr pos)))
-              (move-to-column (car pos)))))
-      (apply orig-fn args)))
-  (advice-add 'evil-ghostel--reset-cursor-point :around
-              #'my/evil-ghostel-reset-cursor-point-a)
-
-  ;; Upstream `evil-ghostel--around-redraw' freezes point in every state
-  ;; except `insert', so entering `emacs-state' (e.g. via `C-z') leaves
-  ;; the cursor stuck at wherever it was when the state changed while
-  ;; the TUI keeps redrawing elsewhere.  Emacs-state is the evil-off
-  ;; escape hatch — users expect it to behave like a vanilla terminal,
-  ;; which means point should follow the terminal cursor like insert.
-  (defun my/evil-ghostel-around-redraw-a (orig-fn term &optional full)
-    (if (and (bound-and-true-p evil-ghostel-mode)
-             (not (memq evil-state '(insert emacs)))
-             (not (ghostel--mode-enabled term 1049)))
-        (let ((saved-point (point)))
-          (funcall orig-fn term full)
-          (goto-char (min saved-point (point-max))))
-      (funcall orig-fn term full)))
-  (advice-add 'evil-ghostel--around-redraw :override
-              #'my/evil-ghostel-around-redraw-a)
-  (defun my/evil-ghostel-emacs-state-entry-h ()
-    (when (and (derived-mode-p 'ghostel-mode)
-               (bound-and-true-p evil-ghostel-mode))
-      (evil-ghostel--insert-state-entry)))
-  (add-hook 'evil-emacs-state-entry-hook
-            #'my/evil-ghostel-emacs-state-entry-h))
+  :custom (evil-ghostel-initial-state 'emacs))
 
 (use-package! iflipb
   :config
