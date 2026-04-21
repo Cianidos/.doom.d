@@ -37,7 +37,7 @@
 ;; `load-theme' function. This is the default:
 
 ;; Semantic dimming theme — structural noise dimmed, definitions/constants highlighted
-(setq! doom-theme 'doom-solarized-semantic)
+(setopt doom-theme 'doom-solarized-semantic)
 
 
 
@@ -75,7 +75,7 @@
 
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
-(setq! display-line-numbers-type 'relative)
+(setopt display-line-numbers-type 'relative)
 
 ;; If you use `org' and don't want your org files in the default locatio below,
 ;; change `org-directory'. It must be set before org loads!
@@ -122,10 +122,10 @@
 (setf dired-kill-when-opening-new-dired-buffer t)
 
 (after! tramp
-  (setq! remote-file-name-inhibit-locks t
-         tramp-use-scp-direct-remote-copying t
-         remote-file-name-inhibit-auto-save-visited t
-         tramp-copy-size-limit (* 1024 1024))) ;; 1MB
+  (setopt remote-file-name-inhibit-locks t
+          tramp-use-scp-direct-remote-copying t
+          remote-file-name-inhibit-auto-save-visited t
+          tramp-copy-size-limit (* 1024 1024))) ;; 1MB
 
 (setq-default
  tab-width 2
@@ -152,10 +152,10 @@
  ;; :nv "g D" nil
  :mn "g D" #'+lookup/references
 
- :nvi "S-<left>" #'evil-window-left
- :nvi "S-<right>" #'evil-window-right
- :nvi "S-<up>" #'evil-window-up
- :nvi "S-<down>" #'evil-window-down
+ :nvie "S-<left>" #'evil-window-left
+ :nvie "S-<right>" #'evil-window-right
+ :nvie "S-<up>" #'evil-window-up
+ :nvie "S-<down>" #'evil-window-down
 
  :m "C-w <left>" #'+evil/window-move-left
  :m "C-w <right>" #'+evil/window-move-right
@@ -223,7 +223,7 @@ If point is on a reference, jump to definition."
 
 
 (after! which-key
-  (setq!
+  (setopt
    which-key-show-remaining-keys t
    which-key-add-column-padding 0
    which-key-dont-use-unicode nil
@@ -628,7 +628,7 @@ Modification of +popup/toggle"
 ;; (defun my/save-keyboard-layout-on-focus ()
 ;;   (let ((tmp my/im-focus)
 ;;         (inhibit-message t))
-;;     (setq! my/im-focus (shell-command-to-string "im-select"))
+;;     (setopt my/im-focus (shell-command-to-string "im-select"))
 ;;     (if (not (equal tmp my/im-focus))
 ;;         (shell-command (concat "im-select " tmp)))))
 ;; (add-function :after after-focus-change-function
@@ -639,7 +639,7 @@ Modification of +popup/toggle"
 
 (use-package! dape
   :config
-  (setq! dape-request-timeout 300)
+  (setopt dape-request-timeout 300)
   (setf (alist-get 'dlv-test dape-configs)
         '(modes (go-mode go-ts-mode)
           ensure dape-ensure-command
@@ -756,9 +756,9 @@ Modification of +popup/toggle"
                   :harper-ls (:linters (:SpellCheck :json-false
                                         :SentenceCapitalization :json-false))))
 
-  (setq! eglot-sync-connect nil
-         eglot-extend-to-xref t
-         eglot-autoshutdown t)
+  (setopt eglot-sync-connect nil
+          eglot-extend-to-xref t
+          eglot-autoshutdown t)
 
   ;; When semantic tokens are available, disable the overlapping tree-sitter
   ;; features so the two systems don't fight over the same faces.
@@ -898,20 +898,20 @@ Modification of +popup/toggle"
   :mode ("\\.puml\\'" . plantuml-mode)
   :config
 
-  (setq! plantuml-indent-level 2)
+  (setopt plantuml-indent-level 2)
 
   ;; Set PNG as default output format
-  (setq! plantuml-default-exec-mode 'executable
-         plantuml-output-type "png"
-         plantuml-server-url "")
+  (setopt plantuml-default-exec-mode 'executable
+          plantuml-output-type "png"
+          plantuml-server-url "")
   
   )
 
 (after! flycheck
-  (setq! flycheck-checker-error-threshold 1000
-         ;; Disable automatic error display — it fights with eldoc for the echo area.
-         ;; Errors are still marked inline; use s-e to see the message on demand.
-         flycheck-display-errors-function #'ignore)
+  (setopt flycheck-checker-error-threshold 1000
+          ;; Disable automatic error display — it fights with eldoc for the echo area.
+          ;; Errors are still marked inline; use s-e to see the message on demand.
+          flycheck-display-errors-function #'ignore)
 
   ;; Kill the floating popup that hides under split windows
   (after! flycheck-popup-tip
@@ -940,19 +940,19 @@ Modification of +popup/toggle"
   :config
   (treesit-auto-add-to-auto-mode-alist 'all)
   ;; (global-treesit-auto-mode)
-  (setq! major-mode-remap-alist
-         '((yaml-mode . yaml-ts-mode)
-           (typescript-mode . typescript-ts-mode)
-           (json-mode . json-ts-mode)
-           (css-mode . css-ts-mode)
-           (python-mode . python-ts-mode)
-           (go-mode . go-ts-mode)
-           (javascript-mode . javascript-ts-mode)
-           ))
+  (setopt major-mode-remap-alist
+          '((yaml-mode . yaml-ts-mode)
+            (typescript-mode . typescript-ts-mode)
+            (json-mode . json-ts-mode)
+            (css-mode . css-ts-mode)
+            (python-mode . python-ts-mode)
+            (go-mode . go-ts-mode)
+            (javascript-mode . javascript-ts-mode)
+            ))
   )
 
 (after! smartparens
-  (setq! sp-autoskip-closing-pair nil)
+  (setopt sp-autoskip-closing-pair nil)
   (dolist (brace '("(" "{" "["))        ;; {|} <RET> not expands without Shift
     (sp-pair brace nil
              :post-handlers '(("||\\n[i]" "S-RET") ("| " "SPC"))))
@@ -970,12 +970,12 @@ Modification of +popup/toggle"
          :embedding-model "deepseek-coder")))
 
 (after! dirvish
-  (setq! dirvish-use-header-line nil
-         dirvish-use-mode-line nil))
+  (setopt dirvish-use-header-line nil
+          dirvish-use-mode-line nil))
 
 
 (after! image-mode
-  (setq! image-auto-resize 'fit-window))
+  (setopt image-auto-resize 'fit-window))
 
 (after! org
   (global-org-modern-mode -1)
@@ -1117,8 +1117,8 @@ Modification of +popup/toggle"
 
 (use-package! magit
   :config
-  (setq! magit-status-margin '(t age-abbreviated magit-log-margin-width t 20)
-         magit-uniquify-buffer-names t)
+  (setopt magit-status-margin '(t age-abbreviated magit-log-margin-width t 20)
+          magit-uniquify-buffer-names t)
 
   ;; Give magit buffers workspace-unique names so each workspace gets its own
   (defadvice! my/magit-workspace-buffer-name-a (fn mode &optional value)
@@ -1131,7 +1131,7 @@ Modification of +popup/toggle"
 
 
 
-(setq! treesit-max-buffer-size 100000000)
+(setopt treesit-max-buffer-size 100000000)
 
 (use-package! telega
   :commands telega
