@@ -381,6 +381,12 @@ refactor the change across the project."
       (when delete (delete-region beg end))
       (ghostel--clean-copy-text text)))
 
+  (defun my/ghostel-set-list-buffers-directory-h ()
+    "Expose cwd via `list-buffers-directory' for ibuffer-projectile."
+    (setq-local list-buffers-directory default-directory))
+  (add-hook 'ghostel-compile-view-mode-hook
+            #'my/ghostel-set-list-buffers-directory-h)
+
   (add-hook 'ghostel-mode-hook
             (defun my/ghostel-install-buffer-locals-h ()
               ;; Force Doom to treat the buffer as "real" so it participates
@@ -389,6 +395,8 @@ refactor the change across the project."
               ;; (popup filters, unreal heuristics) still classifies ghostel
               ;; buffers as non-real without this explicit marker.
               (setq-local doom-real-buffer-p t)
+              ;; Expose cwd to ibuffer-projectile (groups under project).
+              (setq-local list-buffers-directory default-directory)
               ;; Trim trailing whitespace when copying text out of the buffer.
               (setq-local filter-buffer-substring-function
                           #'my/ghostel-trim-substring)))
@@ -416,8 +424,11 @@ is replaced entirely rather than fought with advice."
         (ignore-errors (rename-buffer target t)))))
 
   (defun my/ghostel-rename-on-mode-entry ()
-    "Rename the initial ghostel buffer before any OSC 2 title arrives."
-    (when (derived-mode-p 'ghostel-mode)
+    "Rename the initial ghostel buffer before any OSC 2 title arrives.
+Skip ghostel-compile buffers — they rely on the canonical
+`ghostel-compile-buffer-name' for `get-buffer-create' reuse."
+    (when (and (derived-mode-p 'ghostel-mode)
+               (not (string= (buffer-name) ghostel-compile-buffer-name)))
       (let ((target (my/ghostel-buffer-name)))
         (unless (string= (buffer-name) target)
           (ignore-errors (rename-buffer target t))))))
