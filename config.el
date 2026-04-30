@@ -313,7 +313,7 @@ refactor the change across the project."
         ;; Full redraws rewrite the whole viewport atomically instead of
         ;; patching dirty rows.  Costs a bit more CPU and adds some input
         ;; latency under load, but avoids the partial-path artifacts with
-        ;; aggressive TUIs (Claude Code, btop).
+        ;; aggressive TUIs (Codex, btop).
         ghostel-full-redraw t
         ;; Default is $SHELL, which on some launches (e.g. process spawned
         ;; outside a login session) resolves to plain sh. Prefer a real
@@ -425,13 +425,12 @@ is replaced entirely rather than fought with advice."
 
   (defun my/ghostel-rename-on-mode-entry ()
     "Rename the initial ghostel buffer before any OSC 2 title arrives.
-Skip ghostel-compile buffers — they rely on the canonical
-`ghostel-compile-buffer-name' for `get-buffer-create' reuse."
+Dispatch through `ghostel-set-title-function' so any buffer where
+ghostel sets it nil locally (e.g. compile buffers) is skipped via
+the same gate that suppresses OSC 2 renames."
     (when (and (derived-mode-p 'ghostel-mode)
-               (not (string= (buffer-name) ghostel-compile-buffer-name)))
-      (let ((target (my/ghostel-buffer-name)))
-        (unless (string= (buffer-name) target)
-          (ignore-errors (rename-buffer target t))))))
+               ghostel-set-title-function)
+      (funcall ghostel-set-title-function nil)))
 
   (setq ghostel-set-title-function #'my/ghostel-rename-from-title)
   (add-hook 'ghostel-mode-hook #'my/ghostel-rename-on-mode-entry))
@@ -508,12 +507,12 @@ Skip ghostel-compile buffers — they rely on the canonical
 (defun my/project-switch-action (&optional project-root)
   (pcase (completing-read
           "Open: "
-          '("find-file" "shell" "claude" "btop" "magit" "dired") nil t)
+          '("find-file" "shell" "codex" "btop" "magit" "dired") nil t)
     ("find-file" (doom-project-find-file project-root))
     ("shell"     (let ((default-directory (or project-root default-directory)))
                    (ghostel)))
-    ("claude"    (let ((default-directory (or project-root default-directory)))
-                   (my/term-claude)))
+    ("codex"     (let ((default-directory (or project-root default-directory)))
+                   (my/term-codex)))
     ("btop"      (let ((default-directory (or project-root default-directory)))
                    (my/term-btop)))
     ("magit"     (magit-status-setup-buffer project-root))
@@ -1005,10 +1004,10 @@ Modification of +popup/toggle"
   (when (process-live-p ghostel--process)
     (process-send-string ghostel--process (concat cmd "\r"))))
 
-(defun my/term-claude ()
-  "Open a terminal running Claude Code."
+(defun my/term-codex ()
+  "Open a terminal running Codex."
   (interactive)
-  (my/ghostel-run "claude --dangerously-skip-permissions"))
+  (my/ghostel-run "codex"))
 
 (defun my/term-btop ()
   "Open a terminal running btop."
@@ -1021,7 +1020,7 @@ Modification of +popup/toggle"
       ;; Ghostel terminal (replaces Doom's :term vterm `SPC o t / T' bindings).
       :desc "Shell here"       "o t" #'ghostel
       :desc "Shell at project" "o T" #'ghostel-project
-      :desc "Claude"           "o c" #'my/term-claude
+      :desc "Codex"            "o c" #'my/term-codex
       :desc "btop"             "o B" #'my/term-btop)
 
 (after! corfu
