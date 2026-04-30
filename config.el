@@ -25,8 +25,8 @@
 ;;      doom-variable-pitch-font (font-spec :family "Fira Sans" :size 13))
 ;;
 ;; TODO: determine curretnt resolution and adopt to current dpi or something like this
-(setq doom-font (font-spec :family "Iosevka" :weight 'light :size 40))
-
+(setopt doom-font (font-spec :family "Iosevka" :weight 'light :size 20))
+(setopt nerd-icons-font-family "Iosevka Nerd Font")
 ;; If you or Emacs can't find your font, use 'M-x describe-font' to look them
 ;; up, `M-x eval-region' to execute elisp code, and 'M-x doom/reload-font' to
 ;; refresh your font settings. If Emacs still can't find your font, it likely
@@ -305,22 +305,12 @@ refactor the change across the project."
   ;; buffers as real — otherwise iflipb and the workspace buffer list
   ;; hide them. Short emoji keeps the name compact.
   (setq ghostel-buffer-name "👻"
-        ghostel-max-scrollback (* 5 1024 1024)  ; 5 MB ≈ 5k rows @ 80 cols
+        ghostel-max-scrollback (* 10 1024 1024) ; 5 MB ≈ 5k rows @ 80 cols
         ghostel-shell-integration t
         ghostel-enable-url-detection t
         ghostel-enable-file-detection t
         ghostel-kill-buffer-on-exit t
-        ;; Full redraws rewrite the whole viewport atomically instead of
-        ;; patching dirty rows.  Costs a bit more CPU and adds some input
-        ;; latency under load, but avoids the partial-path artifacts with
-        ;; aggressive TUIs (Codex, btop).
-        ghostel-full-redraw t
-        ;; Default is $SHELL, which on some launches (e.g. process spawned
-        ;; outside a login session) resolves to plain sh. Prefer a real
-        ;; interactive shell.
-        ghostel-shell (or (executable-find "bash")
-                          (getenv "SHELL")
-                          "/bin/sh"))
+        )
   :config
   ;; Doom's indent-guides module enables `indent-bars-mode' for any
   ;; non-`fundamental-mode' buffer unless a predicate in

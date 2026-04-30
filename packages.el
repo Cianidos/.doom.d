@@ -41,7 +41,7 @@
 ;; `M-x ghostel-module-compile' (requires Zig >= 0.15.2).
 (package! ghostel
   :recipe (:host github :repo "dakra/ghostel"
-           :pre-build ("zig" "build" "-Doptimize=ReleaseFast")
+          ;; :pre-build ("zig" "build" "-Doptimize=ReleaseFast")
            :files (:defaults "etc" "terminfo" "ghostel-module.so")))
 (package! evil-ghostel
   :recipe (:host github :repo "dakra/ghostel"
