@@ -1056,16 +1056,7 @@ Modification of +popup/toggle"
 (use-package! magit
   :config
   (setopt magit-status-margin '(t age-abbreviated magit-log-margin-width t 20)
-          magit-uniquify-buffer-names t)
-
-  ;; Give magit buffers workspace-unique names so each workspace gets its own
-  (defadvice! my/magit-workspace-buffer-name-a (fn mode &optional value)
-    :around #'magit-generate-buffer-name-default-function
-    (let ((name (funcall fn mode value)))
-      (if (and (bound-and-true-p persp-mode)
-               (modulep! :ui workspaces))
-          (format "%s<%s>" name (+workspace-current-name))
-        name))))
+          magit-uniquify-buffer-names t))
 
 
 
