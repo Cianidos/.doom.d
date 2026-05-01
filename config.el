@@ -276,34 +276,17 @@ refactor the change across the project."
 (map! :n "M-p" nil
       :n :desc "Toggle Go Exported Symbol" "M-p" #'my/go-toggle-exported)
 
-;; ============================================================================
-;; Ghostel — libghostty-vt terminal (vterm replacement)
-;; ============================================================================
-;;
-;; Notes on differences from vterm:
-;;
-;; - Scrollback is a real Emacs text buffer, so isearch / consult-line /
-;;   occur work over the full history without entering copy-mode.
-;;   The old "copy-mode dance" is mostly obsolete; `M-w' over a region in
-;;   the live buffer just works.
-;;
-;; - Keymap model is inverted. Most keys are sent to the PTY; only keys
-;;   listed in `ghostel-keymap-exceptions' reach Emacs. We add our Meta-
-;;   numeric, M-[/M-], and S-<arrow> keys to the exception list below.
-;;
-;; - Evil integration is via `evil-ghostel'. The terminal starts in
-;;   insert-state and pressing ESC enters normal-state. For alt-screen
-;;   programs (vim/less/htop) ESC is passed through to the app untouched,
-;;   so the old `emacs-state' workaround is no longer needed for them.
-;;   For line-editing TUIs that also need a real ESC (readline vi-mode
-;;   etc.), use `C-c C-q' then ESC to send it literally.
 (use-package! ghostel
   :commands (ghostel ghostel-project ghostel-other
                      ghostel-compile ghostel-recompile)
   :init
-  ;; Name without asterisks so `doom-unreal-buffer-p' treats ghostel
-  ;; buffers as real — otherwise iflipb and the workspace buffer list
-  ;; hide them. Short emoji keeps the name compact.
+  ;; Mark ghostel as a real Doom buffer by mode, not only from
+  ;; `ghostel-mode-hook', so workspace membership does not depend on hook
+  ;; ordering.
+  (add-to-list 'doom-real-buffer-modes 'ghostel-mode)
+
+  ;; Keep the base name compact; the final buffer name is made
+  ;; workspace-aware below.
   (setq ghostel-buffer-name "👻"
         ghostel-max-scrollback (* 10 1024 1024) ; 5 MB ≈ 5k rows @ 80 cols
         ghostel-shell-integration t
@@ -371,25 +354,12 @@ refactor the change across the project."
       (when delete (delete-region beg end))
       (ghostel--clean-copy-text text)))
 
-  (defun my/ghostel-set-list-buffers-directory-h ()
-    "Expose cwd via `list-buffers-directory' for ibuffer-projectile."
-    (setq-local list-buffers-directory default-directory))
-  (add-hook 'ghostel-compile-view-mode-hook
-            #'my/ghostel-set-list-buffers-directory-h)
 
   (add-hook 'ghostel-mode-hook
             (defun my/ghostel-install-buffer-locals-h ()
-              ;; Force Doom to treat the buffer as "real" so it participates
-              ;; in persp/workspaces, iflipb cycling, and `SPC ,' switcher.
-              ;; Despite deriving from `fundamental-mode', something in Doom
-              ;; (popup filters, unreal heuristics) still classifies ghostel
-              ;; buffers as non-real without this explicit marker.
-              (setq-local doom-real-buffer-p t)
-              ;; Expose cwd to ibuffer-projectile (groups under project).
-              (setq-local list-buffers-directory default-directory)
-              ;; Trim trailing whitespace when copying text out of the buffer.
               (setq-local filter-buffer-substring-function
-                          #'my/ghostel-trim-substring)))
+                          #'my/ghostel-trim-substring)
+              ))
 
   ;; Workspace-aware buffer names: "👻<ws> title".  Without surrounding
   ;; asterisks `doom-unreal-buffer-p' treats the buffer as real, so it
@@ -432,8 +402,16 @@ the same gate that suppresses OSC 2 renames."
 ;; there ESC exits to `normal-state' per stock evil bindings.
 (use-package! evil-ghostel
   :after (ghostel evil)
-  :hook (ghostel-mode . evil-ghostel-mode)
-  :custom (evil-ghostel-initial-state 'emacs))
+  :init
+  (setq evil-ghostel-initial-state 'emacs)
+
+  ;; (defun my/evil-ghostel-mode-maybe-h ()
+  ;;   "Enable `evil-ghostel-mode' when the optional integration is available."
+  ;;   (when (require 'evil-ghostel nil t)
+  ;;     (evil-ghostel-mode 1)))
+
+  ;; (add-hook 'ghostel-mode-hook #'my/evil-ghostel-mode-maybe-h)
+  )
 
 (use-package! iflipb
   :config

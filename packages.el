@@ -45,7 +45,7 @@
            :files (:defaults "etc" "terminfo" "ghostel-module.so")))
 (package! evil-ghostel
   :recipe (:host github :repo "dakra/ghostel"
-           :files ("evil-ghostel.el")))
+           :files ("extensions/evil-ghostel/evil-ghostel.el")))
 
 ;; ;; Unpin the built-in eglot (since Emacs 30 ships with it)
 ;; (unpin! eglot)
