@@ -277,23 +277,16 @@ refactor the change across the project."
       :n :desc "Toggle Go Exported Symbol" "M-p" #'my/go-toggle-exported)
 
 (use-package! ghostel
-  :commands (ghostel ghostel-project ghostel-other
-                     ghostel-compile ghostel-recompile)
+  :commands (ghostel ghostel-project ghostel-other)
   :init
   ;; Mark ghostel as a real Doom buffer by mode, not only from
   ;; `ghostel-mode-hook', so workspace membership does not depend on hook
   ;; ordering.
   (add-to-list 'doom-real-buffer-modes 'ghostel-mode)
 
-  ;; Keep the base name compact; the final buffer name is made
-  ;; workspace-aware below.
+  ;; Keep the base name compact.
   (setq ghostel-buffer-name "👻"
-        ghostel-max-scrollback (* 10 1024 1024) ; 5 MB ≈ 5k rows @ 80 cols
-        ghostel-shell-integration t
-        ghostel-enable-url-detection t
-        ghostel-enable-file-detection t
-        ghostel-kill-buffer-on-exit t
-        )
+        ghostel-max-scrollback (* 10 1024 1024)) ; 10 MiB
   :config
   ;; Doom's indent-guides module enables `indent-bars-mode' for any
   ;; non-`fundamental-mode' buffer unless a predicate in
@@ -307,27 +300,8 @@ refactor the change across the project."
     (add-hook '+indent-guides-inhibit-functions
               #'my/indent-guides-inhibit-in-ghostel-p))
 
-  ;; `M-x compile' workalike backed by a real TTY. Programs that probe
-  ;; isatty(3) (coloured output, progress bars, curses) behave as they do
-  ;; in a normal shell. Autoloads are registered via `:commands' above.
-  (require 'ghostel-compile nil t)
-
-  ;; Route the built-in `compile' / `recompile' entry points through
-  ;; ghostel-compile globally. Every caller — `M-x compile', SPC c c,
-  ;; `+make/run', third-party packages that call `(compile ...)' — gets a
-  ;; real TTY under the hood. The advice returns the ghostel-compile
-  ;; buffer so callers that chain on the return value keep working.
-  (defadvice! my/compile-via-ghostel-a (command &rest _)
-    :override #'compile
-    (ghostel-compile command)
-    (get-buffer ghostel-compile-buffer-name))
-
-  (defadvice! my/recompile-via-ghostel-a (&optional edit-command)
-    :override #'recompile
-    (ghostel-recompile edit-command)
-    (get-buffer ghostel-compile-buffer-name))
   ;; Keys that should reach Emacs instead of the terminal.
-  ;; Defaults: C-c C-x C-u C-h C-g M-x M-o M-:
+  ;; Defaults: C-c C-x C-u C-h M-x M-o M-: C-\
   (dolist (k '("M-[" "M-]"
                "M-0" "M-1" "M-2" "M-3" "M-4"
                "M-5" "M-6" "M-7" "M-8" "M-9"
@@ -336,12 +310,7 @@ refactor the change across the project."
     (add-to-list 'ghostel-keymap-exceptions k))
 
   ;; OSC 51 shell → elisp dispatch (same protocol as vterm_cmd).
-  (dolist (cmd '(("find-file"              find-file)
-                 ("find-file-other-window" find-file-other-window)
-                 ("magit-status"           magit-status)
-                 ("dired"                  dired)
-                 ("message"                message)))
-    (add-to-list 'ghostel-eval-cmds cmd))
+  (add-to-list 'ghostel-eval-cmds '("magit-status" magit-status))
 
   ;; Clean text copied out of a ghostel buffer: drop soft-wrap newlines
   ;; and strip per-line trailing whitespace (TUI apps pad to terminal
@@ -358,27 +327,18 @@ refactor the change across the project."
   (add-hook 'ghostel-mode-hook
             (defun my/ghostel-install-buffer-locals-h ()
               (setq-local filter-buffer-substring-function
-                          #'my/ghostel-trim-substring)
-              ))
+                          #'my/ghostel-trim-substring)))
 
-  ;; Workspace-aware buffer names: "👻<ws> title".  Without surrounding
-  ;; asterisks `doom-unreal-buffer-p' treats the buffer as real, so it
-  ;; appears in iflipb and the workspace buffer list.
+  ;; Keep the emoji base name and append OSC 2 titles without asterisks, so
+  ;; Doom treats ghostel buffers as real and iflipb can cycle through them.
   (defun my/ghostel-buffer-name (&optional title)
-    "Compose the workspace-aware ghostel buffer name.
-Includes TITLE when non-empty."
-    (let* ((wsn (and (bound-and-true-p persp-mode)
-                     (modulep! :ui workspaces)
-                     (+workspace-current-name)))
-           (tag (if wsn (format "<%s>" wsn) "")))
-      (if (and title (> (length title) 0))
-          (format "👻%s %s" tag title)
-        (format "👻%s" tag))))
+    "Compose the ghostel buffer name, including TITLE when non-empty."
+    (if (and title (> (length title) 0))
+        (format "👻 %s" title)
+      "👻"))
 
   (defun my/ghostel-rename-from-title (title)
-    "Apply the workspace prefix to TITLE reported via OSC 2.
-Used as `ghostel-set-title-function' so upstream's default rename
-is replaced entirely rather than fought with advice."
+    "Apply `my/ghostel-buffer-name' to TITLE reported via OSC 2."
     (let ((target (my/ghostel-buffer-name title)))
       (unless (string= (buffer-name) target)
         (ignore-errors (rename-buffer target t)))))
@@ -395,23 +355,20 @@ the same gate that suppresses OSC 2 renames."
   (setq ghostel-set-title-function #'my/ghostel-rename-from-title)
   (add-hook 'ghostel-mode-hook #'my/ghostel-rename-on-mode-entry))
 
-;; Evil integration. Mirror vterm: default to `emacs-state' so every key —
-;; including ESC — passes straight through to the terminal. Users who want
-;; vim-style scroll/search/yank enter `insert-state' explicitly (e.g. `C-z'
-;; via Doom's escape-to-emacs-state toggle, or `evil-insert-state'); from
-;; there ESC exits to `normal-state' per stock evil bindings.
+;; Load the compile integration eagerly so stock `compile', `recompile',
+;; `project-compile', and callers of `compilation-start' route through ghostel
+;; even before the first terminal buffer is opened.
+(use-package! ghostel-compile
+  :demand t
+  :config
+  (ghostel-compile-global-mode 1))
+
+;; Evil integration. Mirror vterm: start in `emacs-state' so terminal input is
+;; raw by default, while explicit Evil state changes still work.
 (use-package! evil-ghostel
   :after (ghostel evil)
   :init
-  (setq evil-ghostel-initial-state 'emacs)
-
-  ;; (defun my/evil-ghostel-mode-maybe-h ()
-  ;;   "Enable `evil-ghostel-mode' when the optional integration is available."
-  ;;   (when (require 'evil-ghostel nil t)
-  ;;     (evil-ghostel-mode 1)))
-
-  ;; (add-hook 'ghostel-mode-hook #'my/evil-ghostel-mode-maybe-h)
-  )
+  (setq evil-ghostel-initial-state 'emacs))
 
 (use-package! iflipb
   :config
@@ -968,9 +925,8 @@ Modification of +popup/toggle"
 ;; after `(ghostel)' returns is safe in practice.
 (defun my/ghostel-run (cmd)
   "Open a new ghostel buffer and run CMD."
-  (ghostel)
-  (when (process-live-p ghostel--process)
-    (process-send-string ghostel--process (concat cmd "\r"))))
+  (with-current-buffer (ghostel t)
+    (ghostel-send-string (concat cmd "\r"))))
 
 (defun my/term-codex ()
   "Open a terminal running Codex."
