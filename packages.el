@@ -41,21 +41,8 @@
 ;; `M-x ghostel-module-compile' (requires Zig >= 0.15.2).
 (package! ghostel
   :recipe (:host github :repo "dakra/ghostel"
-          ;; :pre-build ("zig" "build" "-Doptimize=ReleaseFast")
+           ;; :pre-build ("zig" "build" "-Doptimize=ReleaseFast")
            :files (:defaults "etc" "terminfo" "ghostel-module.so")))
-(package! evil-ghostel
-  :recipe (:host github :repo "dakra/ghostel"
-           :files ("extensions/evil-ghostel/evil-ghostel.el")))
-
-;; ;; Unpin the built-in eglot (since Emacs 30 ships with it)
-;; (unpin! eglot)
-;; ;; Use the eglot-semtok fork instead
-;; (package! eglot
-;;   :recipe (:host github
-;;            :repo "lua-vr/eglot-semtok"
-;;            :branch "main"
-;;            :files ("*.el")))
-
 
 ;; To install a package with Doom you must declare them here and run 'doom sync'
 ;; on the command line, then restart Emacs for the changes to take effect -- or

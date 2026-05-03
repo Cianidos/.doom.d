@@ -284,6 +284,11 @@ refactor the change across the project."
   ;; ordering.
   (add-to-list 'doom-real-buffer-modes 'ghostel-mode)
 
+  ;; Plain Evil setup: start ghostel buffers in emacs-state so terminal input
+  ;; is raw by default, without requiring `evil-ghostel-mode'.
+  (after! evil
+    (evil-set-initial-state 'ghostel-mode 'emacs))
+
   ;; Keep the base name compact.
   (setq ghostel-buffer-name "👻"
         ghostel-max-scrollback (* 10 1024 1024)) ; 10 MiB
@@ -329,6 +334,39 @@ refactor the change across the project."
               (setq-local filter-buffer-substring-function
                           #'my/ghostel-trim-substring)))
 
+  ;; Keep the useful part of `evil-ghostel' without enabling its PTY-backed
+  ;; normal-state editing: when plain Evil is in normal/visual/motion state,
+  ;; preserve point across terminal redraws so live TUI output does not pin
+  ;; navigation back to the input field.
+  (defun my/ghostel-preserve-evil-point-a (fn term &optional full)
+    (if (and (derived-mode-p 'ghostel-mode)
+             (bound-and-true-p evil-local-mode)
+             (boundp 'evil-state)
+             (not (memq evil-state '(insert emacs)))
+             (not (bound-and-true-p evil-ghostel-mode))
+             (not ghostel--copy-mode-active)
+             ;; Match `evil-ghostel': alt-screen apps own their screen.
+             (not (ghostel--mode-enabled term 1049)))
+        (let ((point-before-redraw (point))
+              (visual-p (eq evil-state 'visual))
+              (visual-beginning (and (bound-and-true-p evil-visual-beginning)
+                                     (marker-position evil-visual-beginning)))
+              (visual-end (and (bound-and-true-p evil-visual-end)
+                               (marker-position evil-visual-end))))
+          (funcall fn term full)
+          (goto-char (min point-before-redraw (point-max)))
+          (when visual-p
+            (let ((pmax (point-max)))
+              (when visual-beginning
+                (set-marker evil-visual-beginning
+                            (min visual-beginning pmax)))
+              (when visual-end
+                (set-marker evil-visual-end
+                            (min visual-end pmax))))))
+      (funcall fn term full)))
+
+  (advice-add 'ghostel--redraw :around #'my/ghostel-preserve-evil-point-a)
+
   ;; Keep the emoji base name and append OSC 2 titles without asterisks, so
   ;; Doom treats ghostel buffers as real and iflipb can cycle through them.
   (defun my/ghostel-buffer-name (&optional title)
@@ -362,13 +400,6 @@ the same gate that suppresses OSC 2 renames."
   :demand t
   :config
   (ghostel-compile-global-mode 1))
-
-;; Evil integration. Mirror vterm: start in `emacs-state' so terminal input is
-;; raw by default, while explicit Evil state changes still work.
-(use-package! evil-ghostel
-  :after (ghostel evil)
-  :init
-  (setq evil-ghostel-initial-state 'emacs))
 
 (use-package! iflipb
   :config
