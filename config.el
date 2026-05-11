@@ -364,6 +364,109 @@ the same gate that suppresses OSC 2 renames."
   :demand t
   :config (ghostel-compile-global-mode 1))
 
+;; Docker buffers are named like *docker-containers* / * docker compose ... *,
+;; so Doom would normally treat the UI buffers as unreal.  Keep them visible to
+;; workspace-aware switching and run interactive Docker commands in ghostel.
+(defconst my/docker-ui-buffer-modes
+  '(docker-container-mode
+    docker-context-mode
+    docker-image-mode
+    docker-image-history-mode
+    docker-network-mode
+    docker-volume-mode)
+  "Docker UI modes that should behave like real workspace buffers.")
+
+(defun my/docker-ui-buffer-p (buf)
+  "Non-nil if BUF is a docker.el UI buffer."
+  (when-let ((base (or (buffer-base-buffer buf) buf)))
+    (and (buffer-live-p base)
+         (with-current-buffer base
+           (apply #'derived-mode-p my/docker-ui-buffer-modes)))))
+
+(defun my/docker-command-buffer-p (buf)
+  "Non-nil if BUF is a docker.el command output buffer."
+  (when-let ((base (or (buffer-base-buffer buf) buf)))
+    (and (buffer-live-p base)
+         (string-match-p "\\`\\* docker\\b" (buffer-name base))
+         (with-current-buffer base
+           (derived-mode-p 'comint-mode 'shell-mode 'ghostel-mode)))))
+
+(defun my/docker-buffer-p (buf)
+  "Non-nil if BUF belongs to docker.el and should be workspace-pinned."
+  (or (my/docker-ui-buffer-p buf)
+      (my/docker-command-buffer-p buf)))
+
+(defun my/dired-buffer-p (buf)
+  "Non-nil if BUF is a dired/dirvish buffer that should be workspace-pinned."
+  (when-let ((base (or (buffer-base-buffer buf) buf)))
+    (and (buffer-live-p base)
+         (with-current-buffer base
+           (derived-mode-p 'dired-mode 'dirvish-directory-view-mode)))))
+
+(dolist (mode my/docker-ui-buffer-modes)
+  (add-to-list 'doom-real-buffer-modes mode))
+
+(defun my/docker-mark-buffer-real-and-add-to-workspace-h ()
+  "Mark the current docker.el UI buffer real and add it to the current workspace."
+  (doom-mark-buffer-as-real-h)
+  (when (and (bound-and-true-p persp-mode)
+             (fboundp 'get-current-persp)
+             (fboundp 'persp-add-buffer))
+    (when-let ((persp (get-current-persp)))
+      (persp-add-buffer (current-buffer) persp nil nil))))
+
+(dolist (hook '(docker-container-mode-hook
+                docker-context-mode-hook
+                docker-image-mode-hook
+                docker-image-history-mode-hook
+                docker-network-mode-hook
+                docker-volume-mode-hook))
+  (add-hook hook #'my/docker-mark-buffer-real-and-add-to-workspace-h))
+
+(after! docker-process
+  (defun my/docker-run-async-with-buffer-ghostel (program &optional interactive &rest args)
+    "Run an interactive docker.el command in a dedicated ghostel buffer."
+    (if (not interactive)
+        (apply #'docker-run-async-with-buffer-shell program nil args)
+      (require 'ghostel)
+      (docker-with-sudo
+        (let* ((process-args (-remove 's-blank? (-flatten args)))
+               (command (s-join " " (-insert-at 0 program process-args)))
+               (buffer-name (apply #'docker-utils-generate-new-buffer-name
+                                   program process-args))
+               (origin-directory default-directory)
+               (buffer (generate-new-buffer buffer-name)))
+          (when docker-show-messages
+            (message "Running: %s" command))
+          (with-current-buffer buffer
+            (setq-local default-directory origin-directory)
+            ;; Docker command buffers already have meaningful names.
+            (setq-local ghostel-set-title-function nil
+                        ghostel-kill-buffer-on-exit nil))
+          (switch-to-buffer-other-window buffer)
+          ;; docker.el transient values are shell fragments (for example,
+          ;; "--file ~/compose.yaml"), so preserve its shell-command semantics.
+          (ghostel-exec buffer "/bin/sh" (list "-lc" (concat "exec " command)))
+          (when (and (bound-and-true-p persp-mode)
+                     (fboundp 'get-current-persp)
+                     (fboundp 'persp-add-buffer))
+            (when-let ((persp (get-current-persp)))
+              (persp-add-buffer buffer persp nil nil)))))))
+
+  (defun my/docker-run-async-with-buffer-dispatch-a
+      (fn backend program interactive &rest args)
+    "Add a ghostel backend to docker.el's terminal dispatcher."
+    (if (eq backend 'ghostel)
+        (apply #'my/docker-run-async-with-buffer-ghostel program interactive args)
+      (apply fn backend program interactive args)))
+
+  (advice-remove 'docker-run-async-with-buffer-dispatch
+                 #'my/docker-run-async-with-buffer-dispatch-a)
+  (advice-add 'docker-run-async-with-buffer-dispatch
+              :around #'my/docker-run-async-with-buffer-dispatch-a)
+
+  (setq docker-terminal-backend 'ghostel))
+
 (use-package! iflipb
   :config
 
@@ -456,7 +559,7 @@ the same gate that suppresses OSC 2 renames."
   ;; Default 'non-empty renames main → project when main has no buffers.
   (setq +workspaces-on-switch-project-behavior t)
 
-  ;; Pin ghostel/magit buffers to the workspace they were first added to.
+  ;; Pin ghostel/magit/docker/dired buffers to the workspace they were first added to.
   ;; File-visiting and other buffers are exempt.
   ;;
   ;; Two layers are needed because persp-mode leaks in two ways:
@@ -471,10 +574,12 @@ the same gate that suppresses OSC 2 renames."
   ;;     without adding it to the perspective. A post-switch sweep replaces
   ;;     such windows with a fallback buffer.
   (defun my/persp-pinned-mode-p (buf)
-    "Non-nil if BUF is a ghostel/magit buffer that should be workspace-pinned."
+    "Non-nil if BUF should stay pinned to its first workspace."
     (and (buffer-live-p buf)
-         (with-current-buffer buf
-           (derived-mode-p 'ghostel-mode 'magit-mode))))
+         (or (my/docker-buffer-p buf)
+             (my/dired-buffer-p buf)
+             (with-current-buffer (or (buffer-base-buffer buf) buf)
+               (derived-mode-p 'ghostel-mode 'magit-mode)))))
 
   (defun my/persp-pin-p (buf persp)
     "Non-nil if BUF should be blocked from being added to PERSP."
