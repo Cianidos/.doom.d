@@ -82,37 +82,6 @@
 (setq org-directory "~/org/")
 
 
-;; Whenever you reconfigure a package, make sure to wrap your config in an
-;; `after!' block, otherwise Doom's defaults may override your settings. E.g.
-;;
-;;   (after! PACKAGE
-;;     (setq x y))
-;;
-;; The exceptions to this rule:
-;;
-;;   - Setting file/directory variables (like `org-directory')
-;;   - Setting variables which explicitly tell you to set them before their
-;;     package is loaded (see 'C-h v VARIABLE' to look up their documentation).
-;;   - Setting doom variables (which start with 'doom-' or '+').
-;;
-;; Here are some additional functions/macros that will help you configure Doom.
-;;
-;; - `load!' for loading external *.el files relative to this one
-;; - `use-package!' for configuring packages
-;; - `after!' for running code after a package has loaded
-;; - `add-load-path!' for adding directories to the `load-path', relative to
-;;   this file. Emacs searches the `load-path' when you load packages with
-;;   `require' or `use-package'.
-;; - `map!' for binding new keys
-;;
-;; To get information about any of these functions/macros, move the cursor over
-;; the highlighted symbol at press 'K' (non-evil users must press 'C-c c k').
-;; This will open documentation for it, including demos of how they are used.
-;; Alternatively, use `C-h o' to look up a symbol (functions, variables, faces,
-;; etc).
-;;
-;; You can also try 'gd' (or 'C-c c d') to jump to their definition and see how
-;; they are implemented.
 
 (after! server
   (unless (server-running-p)
@@ -164,11 +133,6 @@
 
  "s-<left>" #'back-to-indentation
  "s-<right>" #'end-of-line
-
- "M-ъ" (lambda () (interactive) (insert "="))
- "M-Ъ" (lambda () (interactive) (insert "+"))
- "M-ь" (lambda () (interactive) (insert "-"))
- "M-Ь" (lambda () (interactive) (insert "_"))
 
  :mnv "g C-c" #'evilnc-copy-and-comment-lines
 
@@ -398,8 +362,7 @@ the same gate that suppresses OSC 2 renames."
 ;; even before the first terminal buffer is opened.
 (use-package! ghostel-compile
   :demand t
-  :config
-  (ghostel-compile-global-mode 1))
+  :config (ghostel-compile-global-mode 1))
 
 (use-package! iflipb
   :config
@@ -451,13 +414,6 @@ the same gate that suppresses OSC 2 renames."
 
 (load! "lisp/phony-projects")
 
-;; Telega root buffer without *...* so iflipb and buffer lists treat it as real.
-;; Telega buffers visit no file, so `doom-non-file-visiting-buffer-p' would
-;; otherwise mark them unreal; register the modes as always-real instead.
-(after! telega
-  (setq telega-root-buffer-name "Telega")
-  (add-to-list 'doom-real-buffer-modes 'telega-root-mode)
-  (add-to-list 'doom-real-buffer-modes 'telega-chat-mode))
 
 ;; Project switch action: completing-read between common entry points.
 (defun my/project-switch-action (&optional project-root)
@@ -1090,14 +1046,21 @@ Modification of +popup/toggle"
           magit-uniquify-buffer-names t))
 
 
-
 (setopt treesit-max-buffer-size 100000000)
 
 (use-package! telega
   :commands telega
   :config
-  (setq telega-server-libs-prefix (expand-file-name "~/opt/thirdparty/installation/tdlib"))
 
+  (setq telega-root-buffer-name "Telega")
+  (add-to-list 'doom-real-buffer-modes 'telega-root-mode)
+  (add-to-list 'doom-real-buffer-modes 'telega-chat-mode)
+
+  (setq telega-server-libs-prefix
+        (pcase system-type
+          ('darwin (string-trim (shell-command-to-string "brew --prefix tdlib")))
+          ('gnu/linux (expand-file-name "~/opt/thirdparty/installation/tdlib")))
+        )
   (setq telega-chat-show-reactions t)
   (setq telega-chat-button-width '(0.25 15 30))
   (global-telega-squash-message-mode 1)
