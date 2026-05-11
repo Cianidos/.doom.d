@@ -128,6 +128,10 @@ making projectile-project-root unreliable."
 Safe to call interactively to pick up newly created phony projects."
   (interactive)
   (when (file-directory-p my/phony-dir)
+    ;; Projectile loads `projectile-known-projects-file' lazily.  Initialize it
+    ;; before editing the variable, otherwise startup discovery can overwrite
+    ;; the saved project list with only the phony projects found here.
+    (projectile-known-projects)
     (let ((added 0))
       (dolist (entry (directory-files my/phony-dir t "^[^.]"))
         (when (and (file-directory-p entry)
@@ -137,7 +141,7 @@ Safe to call interactively to pick up newly created phony projects."
               (cl-pushnew abbrev projectile-known-projects :test #'string=)
               (cl-incf added)))))
       (when (> added 0)
-        (projectile-save-known-projects)))))
+        (projectile-merge-known-projects)))))
 
 ;;; Wire up
 
