@@ -1030,12 +1030,18 @@ Modification of +popup/toggle"
   (interactive)
   (my/ghostel-run "btop"))
 
+(defun my/ghostel-new ()
+  "Open a fresh ghostel terminal in the current directory."
+  (interactive)
+  (ghostel t))
+
 (map! :leader
       :desc "Make"             "o m" #'+make/run
       :desc "Make last"        "o M" #'+make/run-last
       ;; Ghostel terminal (replaces Doom's :term vterm `SPC o t / T' bindings).
       :desc "Shell here"       "o t" #'ghostel
-      :desc "Shell at project" "o T" #'ghostel-project
+      :desc "New shell here"   "o T" #'my/ghostel-new
+      :desc "Shell at project" "p t" #'ghostel-project
       :desc "Codex"            "o c" #'my/term-codex
       :desc "btop"             "o B" #'my/term-btop)
 
