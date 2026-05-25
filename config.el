@@ -254,8 +254,9 @@ refactor the change across the project."
     (evil-set-initial-state 'ghostel-mode 'emacs))
 
   ;; Keep the base name compact.
-  (setq ghostel-buffer-name "👻"
-        ghostel-max-scrollback (* 10 1024 1024)) ; 10 MiB
+  (setq
+   ghostel-buffer-name "👻"
+   ghostel-max-scrollback (* 10 1024 1024)) ; 10 MiB
   :config
   ;; Doom's indent-guides module enables `indent-bars-mode' for any
   ;; non-`fundamental-mode' buffer unless a predicate in
@@ -430,28 +431,28 @@ the same gate that suppresses OSC 2 renames."
         (apply #'docker-run-async-with-buffer-shell program nil args)
       (require 'ghostel)
       (docker-with-sudo
-        (let* ((process-args (-remove 's-blank? (-flatten args)))
-               (command (s-join " " (-insert-at 0 program process-args)))
-               (buffer-name (apply #'docker-utils-generate-new-buffer-name
-                                   program process-args))
-               (origin-directory default-directory)
-               (buffer (generate-new-buffer buffer-name)))
-          (when docker-show-messages
-            (message "Running: %s" command))
-          (with-current-buffer buffer
-            (setq-local default-directory origin-directory)
-            ;; Docker command buffers already have meaningful names.
-            (setq-local ghostel-set-title-function nil
-                        ghostel-kill-buffer-on-exit nil))
-          (switch-to-buffer-other-window buffer)
-          ;; docker.el transient values are shell fragments (for example,
-          ;; "--file ~/compose.yaml"), so preserve its shell-command semantics.
-          (ghostel-exec buffer "/bin/sh" (list "-lc" (concat "exec " command)))
-          (when (and (bound-and-true-p persp-mode)
-                     (fboundp 'get-current-persp)
-                     (fboundp 'persp-add-buffer))
-            (when-let ((persp (get-current-persp)))
-              (persp-add-buffer buffer persp nil nil)))))))
+       (let* ((process-args (-remove 's-blank? (-flatten args)))
+              (command (s-join " " (-insert-at 0 program process-args)))
+              (buffer-name (apply #'docker-utils-generate-new-buffer-name
+                                  program process-args))
+              (origin-directory default-directory)
+              (buffer (generate-new-buffer buffer-name)))
+         (when docker-show-messages
+           (message "Running: %s" command))
+         (with-current-buffer buffer
+           (setq-local default-directory origin-directory)
+           ;; Docker command buffers already have meaningful names.
+           (setq-local ghostel-set-title-function nil
+                       ghostel-kill-buffer-on-exit nil))
+         (switch-to-buffer-other-window buffer)
+         ;; docker.el transient values are shell fragments (for example,
+         ;; "--file ~/compose.yaml"), so preserve its shell-command semantics.
+         (ghostel-exec buffer "/bin/sh" (list "-lc" (concat "exec " command)))
+         (when (and (bound-and-true-p persp-mode)
+                    (fboundp 'get-current-persp)
+                    (fboundp 'persp-add-buffer))
+           (when-let ((persp (get-current-persp)))
+             (persp-add-buffer buffer persp nil nil)))))))
 
   (defun my/docker-run-async-with-buffer-dispatch-a
       (fn backend program interactive &rest args)
@@ -520,16 +521,19 @@ the same gate that suppresses OSC 2 renames."
 
 ;; Project switch action: completing-read between common entry points.
 (defun my/project-switch-action (&optional project-root)
+  "Choose a project action for PROJECT-ROOT or the current project."
+  (interactive (list (or (doom-project-root) default-directory)))
+  (setq project-root (or project-root (doom-project-root) default-directory))
   (pcase (completing-read
           "Open: "
-          '("find-file" "shell" "codex" "btop" "magit" "dired") nil t)
+          '("find-file" "shell" "codex" "opencode" "magit" "dired") nil t)
     ("find-file" (doom-project-find-file project-root))
     ("shell"     (let ((default-directory (or project-root default-directory)))
-                   (ghostel)))
+                   (my/ghostel-local nil default-directory)))
     ("codex"     (let ((default-directory (or project-root default-directory)))
                    (my/term-codex)))
-    ("btop"      (let ((default-directory (or project-root default-directory)))
-                   (my/term-btop)))
+    ("opencode"  (let ((default-directory (or project-root default-directory)))
+                   (my/term-opencode)))
     ("magit"     (magit-status-setup-buffer project-root))
     ("dired"     (dired project-root))))
 
@@ -1020,10 +1024,35 @@ Modification of +popup/toggle"
   (with-current-buffer (ghostel t)
     (ghostel-send-string (concat cmd "\r"))))
 
+(defun my/ghostel-local (&optional arg directory)
+  "Open Ghostel scoped to the current workspace and DIRECTORY."
+  (interactive "P")
+  (let* ((dir (file-name-as-directory
+               (expand-file-name (or directory default-directory))))
+         (workspace-name (and (bound-and-true-p persp-mode)
+                              (fboundp '+workspace-current-name)
+                              (+workspace-current-name)))
+         (scope (if workspace-name
+                    (format "%s:%s" workspace-name (abbreviate-file-name (file-truename dir)))
+                  (abbreviate-file-name (file-truename dir))))
+         (default-directory dir)
+         (ghostel-buffer-name (format "%s<%s>" ghostel-buffer-name scope)))
+    (ghostel arg)))
+
+(defun my/ghostel-project-local (&optional arg)
+  "Open Ghostel scoped to the current workspace and project root."
+  (interactive "P")
+  (my/ghostel-local arg (or (doom-project-root) default-directory)))
+
 (defun my/term-codex ()
   "Open a terminal running Codex."
   (interactive)
   (my/ghostel-run "codex"))
+
+(defun my/term-opencode ()
+  "Open a terminal running opencode."
+  (interactive)
+  (my/ghostel-run "opencode"))
 
 (defun my/term-btop ()
   "Open a terminal running btop."
@@ -1039,9 +1068,10 @@ Modification of +popup/toggle"
       :desc "Make"             "o m" #'+make/run
       :desc "Make last"        "o M" #'+make/run-last
       ;; Ghostel terminal (replaces Doom's :term vterm `SPC o t / T' bindings).
-      :desc "Shell here"       "o t" #'ghostel
+      :desc "Shell here"       "o t" #'my/ghostel-local
       :desc "New shell here"   "o T" #'my/ghostel-new
-      :desc "Shell at project" "p t" #'ghostel-project
+      :desc "Project actions"  "p o" #'my/project-switch-action
+      :desc "Shell at project" "p t" #'my/ghostel-project-local
       :desc "Codex"            "o c" #'my/term-codex
       :desc "btop"             "o B" #'my/term-btop)
 

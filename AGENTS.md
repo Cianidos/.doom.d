@@ -24,6 +24,8 @@ preference for Doom macros (`after!`, `use-package!`, `map!`, `setq-hook!`,
   related Emacs hooks are currently commented out.
 - `emacs-mcp/main.go` is a dependency-free Go MCP stdio server that exposes a
   running Emacs through `emacsclient`. `emacs-mcp/emacs-mcp` is the built binary.
+- `opencode.json` registers the local `emacs` MCP server for opencode, backed by
+  `emacs-mcp/emacs-mcp`.
 - `snippets/go-ts-mode/` contains Yasnippet snippets for Go tree-sitter mode.
 
 ## Important Invariants
@@ -71,6 +73,7 @@ Use the smallest validation that matches the change:
 - Live Emacs checks through MCP for behavior that can be verified interactively.
 - `doom build` or Doom reload for broad Elisp changes when useful.
 - `go fmt ./...` and `go test ./...` inside `emacs-mcp/` after MCP server edits.
+- Restart opencode after edits to `opencode.json`; config is read once at startup.
 - `go fmt scripts/im-select.go` after keyboard-layout helper edits.
 
 For Elisp-only edits, prefer checking the affected feature interactively in the
